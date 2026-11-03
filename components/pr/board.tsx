@@ -2,7 +2,7 @@
 // (MIT): one repository, Authored / Reviewing / All, search, sort, the
 // Needs you and Starred views, and rows grouped by what they need.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { experimental_useAppPanel, experimental_usePanelTabs, useRpc } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,15 +67,67 @@ const FILTERS: readonly { value: PullRequestFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-export function prSubPath(item: { url: string }): string {
-  const [owner, name, , number] = new URL(item.url).pathname.replace(/^\/+/, "").split("/");
-  return `pr/${owner}/${name}/${number}`;
+/** The side-panel tab that shows one pull request. */
+export const PR_TAB = {
+  id: "pull-request",
+  context: { kind: "nav-panel", panelId: "pull-requests" },
+  availability: "action",
+} as const;
+
+export interface PullRequestTabParams {
+  owner: string;
+  name: string;
+  number: number;
+}
+
+export function prTabParams(url: string): PullRequestTabParams {
+  const [owner, name, , number] = new URL(url).pathname.replace(/^\/+/, "").split("/");
+  return { owner: owner!, name: name!, number: Number(number) };
+}
+
+export function parsePrTabParams(params: unknown): PullRequestTabParams | null {
+  if (typeof params !== "object" || params === null) return null;
+  const { owner, name, number } = params as Record<string, unknown>;
+  return typeof owner === "string" &&
+    typeof name === "string" &&
+    validRepository(`${owner}/${name}`) &&
+    typeof number === "number" &&
+    Number.isInteger(number) &&
+    number > 0
+    ? { owner, name, number }
+    : null;
+}
+
+function sameParams(a: PullRequestTabParams | null, b: PullRequestTabParams): boolean {
+  return (
+    a !== null &&
+    a.number === b.number &&
+    a.owner.toLowerCase() === b.owner.toLowerCase() &&
+    a.name.toLowerCase() === b.name.toLowerCase()
+  );
 }
 
 export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: (url: string) => void }) {
   const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
+  const panel = experimental_useAppPanel();
+  const panelTabs = experimental_usePanelTabs();
   const now = useNow();
+  // The pull request showing in the side panel, highlighted on the board.
+  const selectedTab = panelTabs.open
+    ? panelTabs.tabs.find((t) => t.key === panelTabs.selectedKey)
+    : undefined;
+  const selectedParams =
+    selectedTab?.detail.kind === "plugin" && selectedTab.detail.tab.id === PR_TAB.id
+      ? parsePrTabParams(selectedTab.detail.params)
+      : null;
+  const openPullRequest = (item: PullRequestListItem) => {
+    const params = prTabParams(item.url);
+    panel.openTab({
+      tab: PR_TAB,
+      params: { ...params },
+      title: `#${item.number} ${item.title}`,
+    });
+  };
 
   const [choices, setChoices] = useState<RepositoryChoice[] | null>(null);
   const [repository, setRepository] = useState<string | null>(null);
@@ -420,7 +472,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                       <span className="text-[11px]">{groupItems.length}</span>
                     </button>
                     {closed ? null : (
-                      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-raised">
                         {groupItems.map((item) => (
                           <Row
                             key={item.url}
@@ -429,7 +481,8 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                             sortField={sort.field}
                             starred={stars.includes(starKey(item.url))}
                             onToggleStar={() => onToggleStar(item.url)}
-                            onOpen={() => navigate.toPluginPanel("pull-requests", { subPath: prSubPath(item) })}
+                            selected={sameParams(selectedParams, prTabParams(item.url))}
+                            onOpen={() => openPullRequest(item)}
                           />
                         ))}
                       </div>
@@ -456,7 +509,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
 
 function Skeleton() {
   return (
-    <div aria-busy className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+    <div aria-busy className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-raised">
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex min-h-16 flex-col justify-center gap-2 px-4 py-3">
           <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
@@ -481,7 +534,9 @@ function Row({
   starred,
   onToggleStar,
   onOpen,
+  selected,
 }: {
+  selected: boolean;
   item: PullRequestListItem;
   now: number;
   sortField: Sort["field"];
@@ -519,7 +574,7 @@ function Row({
     <div
       role="link"
       tabIndex={0}
-      aria-label={`${item.title}: ${item.repository} #${item.number}. ${statusDescription(item)}. Open pull request`}
+      aria-label={`${item.title}: ${item.repository} #${item.number}. ${statusDescription(item)}. Open pull request in the side panel`}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -527,7 +582,11 @@ function Row({
           onOpen();
         }
       }}
-      className="flex min-h-16 cursor-pointer items-center gap-4 px-4 py-2.5 outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
+      aria-current={selected ? "true" : undefined}
+      className={cn(
+        "flex min-h-16 cursor-pointer items-center gap-4 px-4 py-2.5 outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
+        selected && "bg-state-active hover:bg-state-active",
+      )}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2 text-[13px]" title={item.title}>

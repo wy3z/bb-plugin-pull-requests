@@ -13,7 +13,10 @@
       "icon": "GitPullRequest"
     },
     "server": "./server.ts",
-    "app": "./app.tsx"
+    "app": "./app.tsx",
+    "skills": [
+      "skills"
+    ]
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.4.0",

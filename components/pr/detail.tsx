@@ -37,6 +37,7 @@ import {
   type PullRequestDetail,
 } from "@/lib/model";
 import { availableHandoffs, HANDOFFS, handoffPrompt } from "@/lib/handoff";
+import { SubscribeButton } from "./listening";
 import type { DiffFile, PullRequestError, RepositoryChoice, rpcContract } from "../../server";
 import { StarButton } from "./board";
 import { RepoIcon } from "@/components/project-icons/RepoIcon";
@@ -140,7 +141,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Card({ title, trailing, children }: { title?: string; trailing?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-card">
+    <section className="overflow-hidden rounded-xl border border-border bg-surface-raised">
       {title ? (
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-[13px] font-medium">
           <span className="flex-1">{title}</span>
@@ -158,14 +159,21 @@ export function DetailPage({
   number,
   stars,
   onToggleStar,
+  layout = "page",
+  threadId,
 }: {
   owner: string;
   name: string;
   number: number;
   stars: string[];
   onToggleStar: (url: string) => void;
+  /** "panel" is the side-panel tab: tighter padding, no back link. */
+  layout?: "page" | "panel";
+  /** The thread whose side panel shows this; enables Subscribe. */
+  threadId?: string;
 }) {
   const url = `https://github.com/${owner}/${name}/pull/${number}`;
+  const inPanel = layout === "panel";
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const now = useNow();
@@ -238,18 +246,37 @@ export function DetailPage({
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto box-border w-full max-w-[860px] px-4 pb-10 pt-4 md:px-10">
+      <div
+        className={cn(
+          "mx-auto box-border w-full",
+          inPanel ? "px-3 pb-6 pt-2" : "max-w-[860px] px-4 pb-10 pt-4 md:px-10",
+        )}
+      >
         {/* Toolbar */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 px-2 text-xs text-muted-foreground"
-            onClick={() => navigate.toPluginPanel("pull-requests", { subPath: "" })}
-          >
-            <Icon name="ArrowLeft" className="size-3.5" />
-            Pull requests
-          </Button>
+          {inPanel ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground"
+              aria-label="Open as page"
+              onClick={() =>
+                navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })
+              }
+            >
+              <Icon name="Maximize2" className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={() => navigate.toPluginPanel("pull-requests", { subPath: "" })}
+            >
+              <Icon name="ArrowLeft" className="size-3.5" />
+              Pull requests
+            </Button>
+          )}
           <div className="flex-1" />
           <StarButton starred={stars.includes(starKey(url))} onToggle={() => onToggleStar(url)} />
           <Button
@@ -284,6 +311,7 @@ export function DetailPage({
           >
             <Icon name="ExternalLink" className="size-4" />
           </Button>
+          {threadId ? <SubscribeButton threadId={threadId} url={url} /> : null}
           {detail ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -313,7 +341,7 @@ export function DetailPage({
 
         {/* Header */}
         <div className="mt-4 px-2">
-          <h1 className="text-xl font-medium leading-[26px]">{detail?.title ?? `Pull request #${number}`}</h1>
+          <h1 className={cn("font-medium", inPanel ? "text-base leading-[22px]" : "text-xl leading-[26px]")}>{detail?.title ?? `Pull request #${number}`}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             {detail ? (
               <span className="flex items-center gap-2">
@@ -359,8 +387,8 @@ export function DetailPage({
             </EmptyState>
           ) : detail === null ? (
             <div aria-busy className="space-y-3">
-              <div className="h-40 animate-pulse rounded-xl border border-border bg-card" />
-              <div className="h-24 animate-pulse rounded-xl border border-border bg-card" />
+              <div className="h-40 animate-pulse rounded-xl border border-border bg-surface-raised" />
+              <div className="h-24 animate-pulse rounded-xl border border-border bg-surface-raised" />
             </div>
           ) : tab === "summary" ? (
             <Summary detail={detail} />
@@ -525,7 +553,7 @@ function Code({
     );
   }
   if (diff === null) {
-    return <div aria-busy className="h-64 animate-pulse rounded-xl border border-border bg-card" />;
+    return <div aria-busy className="h-64 animate-pulse rounded-xl border border-border bg-surface-raised" />;
   }
   if (diff.length === 0) {
     return <EmptyState icon="Code" title="No changes" body="This pull request has no file changes." />;
@@ -558,7 +586,7 @@ function Code({
         const isClosed = closed.includes(file.path);
         const stat = stats.get(file.path);
         return (
-          <section key={file.path} className="overflow-hidden rounded-xl border border-border bg-card">
+          <section key={file.path} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
             <button
               type="button"
               aria-expanded={!isClosed}
@@ -638,7 +666,7 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
       ) : (
         entries.map((entry) =>
           entry.kind === "thread" ? (
-            <section key={entry.thread.id} className="overflow-hidden rounded-xl border border-border bg-card">
+            <section key={entry.thread.id} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
               <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs">
                 <Icon name="FileDiff" className="size-3.5 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate font-mono">
@@ -670,14 +698,14 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
               </div>
             </section>
           ) : (
-            <section key={entry.comment.id || entry.at} className="overflow-hidden rounded-xl border border-border bg-card">
+            <section key={entry.comment.id || entry.at} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
               <CommentBody comment={entry.comment} now={now} review={entry.kind === "review"} />
             </section>
           ),
         )
       )}
 
-      <section className="rounded-xl border border-border bg-card p-3">
+      <section className="rounded-xl border border-border bg-surface-raised p-3">
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

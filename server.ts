@@ -6,7 +6,7 @@
 // using the same GraphQL queries, CI rollup rules and error classes. Nothing
 // is executed through a shell, and request bodies travel on stdin.
 import { spawn } from "node:child_process";
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { cliCommand, defineCli, defineRpcContract, PluginCliError, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   ciFromChecks,
@@ -25,6 +25,7 @@ import {
   type PullRequestReviewThread,
   type ReviewDecision,
 } from "./lib/model";
+import { createSubscriptions, shortId, type SubscriptionView } from "./lib/subscriptions";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -577,6 +578,57 @@ async function postComment(rawUrl: string, body: string): Promise<PullRequestCom
   };
 }
 
+/** A pull request's pill: identity, state and CI, from one `gh pr view`. */
+export interface PullRequestSummary {
+  url: string;
+  repository: string;
+  number: number;
+  title: string;
+  /** OPEN, CLOSED or MERGED. */
+  state: string;
+  isDraft: boolean;
+  ci: PullRequestCi;
+  reviewDecision: ReviewDecision;
+  mergeability: Mergeability;
+  /** GitHub login, or null for a deleted account. */
+  author: string | null;
+  /** ISO timestamp, or null when GitHub left it out. */
+  createdAt: string | null;
+}
+
+const SUMMARY_FIELDS =
+  "number,title,url,state,isDraft,reviewDecision,mergeable,headRefOid,statusCheckRollup,author,createdAt";
+
+async function fetchSummary(rawUrl: string): Promise<PullRequestSummary> {
+  const { url, owner, name, number } = validatedPullRequestUrl(rawUrl);
+  const value = await ghJson(["pr", "view", url, "--json", SUMMARY_FIELDS]);
+  const checks: PullRequestCheck[] = Array.isArray(value.statusCheckRollup)
+    ? value.statusCheckRollup.filter(Boolean).map(toCheck)
+    : [];
+  return {
+    url,
+    repository: `${owner}/${name}`,
+    number: Number(value.number ?? number),
+    title: String(value.title ?? "").split(/\s+/).filter(Boolean).join(" "),
+    state: String(value.state ?? ""),
+    isDraft: value.isDraft === true,
+    ci: Array.isArray(value.statusCheckRollup) ? ciFromChecks(checks) : { state: "unknown", totalCount: 0 },
+    reviewDecision: reviewDecision(value.reviewDecision),
+    mergeability: mergeability(value.mergeable),
+    author: typeof value.author?.login === "string" ? value.author.login : null,
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : null,
+  };
+}
+
+/** Canonical https://github.com/<owner>/<repo>/pull/<n>, or null. */
+export function canonicalPullRequestUrl(raw: string): string | null {
+  try {
+    return validatedPullRequestUrl(raw.trim()).url;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cache: one shared read per key, fresh for a minute; a rate limit pauses
 // every GitHub read for 15 minutes, keeping loaded results.
@@ -702,12 +754,49 @@ export const rpcContract = defineRpcContract({
     input: z.object({ url: urlSchema, body: z.string().trim().min(1).max(60_000) }),
     output: result<PullRequestComment>(),
   },
+  summaries: {
+    input: z.object({ urls: z.array(urlSchema).max(20), refresh: z.boolean() }),
+    output: z.custom<{ items: { url: string; summary: Result<PullRequestSummary> }[] }>(),
+  },
+  linked_list: {
+    input: z.object({ threadId: z.string().min(1).max(100) }),
+    output: z.custom<{ urls: string[] }>(),
+  },
+  link: {
+    input: z.object({ threadId: z.string().min(1).max(100), url: urlSchema }),
+    output: z.custom<{ urls: string[] }>(),
+  },
+  unlink: {
+    input: z.object({ threadId: z.string().min(1).max(100), url: urlSchema }),
+    output: z.custom<{ urls: string[] }>(),
+  },
+  subscriptions_list: {
+    input: z.object({ threadId: z.string().min(1).max(100) }),
+    output: z.custom<{ subscriptions: SubscriptionView[]; intervalSeconds: number }>(),
+  },
+  subscribe: {
+    input: z.object({ threadId: z.string().min(1).max(100), urls: z.array(z.string().min(1).max(300)).min(1).max(50) }),
+    output: z.custom<{ urls: string[] }>(),
+  },
+  unsubscribe: {
+    input: z.object({ threadId: z.string().min(1).max(100), urls: z.array(z.string().min(1).max(300)).min(1).max(50) }),
+    output: z.custom<{ urls: string[] }>(),
+  },
 });
+export type { SubscriptionView } from "./lib/subscriptions";
+
+/** Realtime channel: a thread's linked pull requests changed. Payload `{ threadId }`. */
+export const LINKS_CHANGED = "links-changed";
+const LINKS_KEY = "linked";
+const LINK_LIMIT = 12;
 
 const PREFERENCES_KEY = "preferences";
+/** Realtime channel: stars changed, refetch preferences. */
+export const STARS_CHANGED = "stars-changed";
 const DEFAULT_PREFERENCES: Preferences = { repository: null, filter: "authored", stars: [], recent: [] };
 
 export default async function plugin(bb: BbPluginApi) {
+  const subscriptions = createSubscriptions(bb, { graphql, canonicalUrl: canonicalPullRequestUrl });
   const cache = new RequestCache();
 
   async function readPreferences(): Promise<Preferences> {
@@ -776,6 +865,7 @@ export default async function plugin(bb: BbPluginApi) {
         ? current.stars.filter((s) => s !== key)
         : [...current.stars, key].slice(-500);
       await writePreferences({ ...current, stars });
+      bb.realtime.publish(STARS_CHANGED, { count: stars.length });
       return { stars };
     },
     list: ({ repository, filter, after, refresh }) =>
@@ -801,7 +891,218 @@ export default async function plugin(bb: BbPluginApi) {
         cache.evictPrefix(`detail:${validatedPullRequestUrl(url).url}`);
         return posted;
       }),
+    summaries: async ({ urls, refresh }) => ({
+      items: await Promise.all(
+        urls.map(async (url) => ({
+          url,
+          summary: await guard(async () => {
+            const canonical = validatedPullRequestUrl(url).url;
+            return cache.get(`summary:${canonical}`, refresh, () => fetchSummary(canonical));
+          }),
+        })),
+      ),
+    }),
+    linked_list: async ({ threadId }) => ({ urls: await readLinks(threadId) }),
+    link: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "link") }),
+    unlink: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "unlink") }),
+    subscriptions_list: ({ threadId }) => subscriptions.list(threadId),
+    subscribe: ({ threadId, urls }) => subscriptions.mutate(threadId, urls, true),
+    unsubscribe: ({ threadId, urls }) => subscriptions.mutate(threadId, urls, false),
   });
+
+  // ---- Linked pull requests: kept on the thread, in this plugin's metadata.
+
+  async function readLinks(threadId: string): Promise<string[]> {
+    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId, pluginId: bb.pluginId });
+    const raw = metadata[LINKS_KEY];
+    return Array.isArray(raw)
+      ? raw.flatMap((value) => {
+          const url = typeof value === "string" ? canonicalPullRequestUrl(value) : null;
+          return url ? [url] : [];
+        })
+      : [];
+  }
+
+  async function changeLinks(threadId: string, rawUrl: string, change: "link" | "unlink"): Promise<string[]> {
+    const url = canonicalPullRequestUrl(rawUrl);
+    if (url === null) throw new GhError("unsupported");
+    const current = await readLinks(threadId);
+    const same = (other: string) => other.toLowerCase() === url.toLowerCase();
+    const next =
+      change === "link"
+        ? current.some(same)
+          ? current
+          : [...current, url].slice(-LINK_LIMIT)
+        : current.filter((other) => !same(other));
+    if (next.length !== current.length || next.some((u, i) => u !== current[i])) {
+      await bb.sdk.threads.updatePluginMetadata({
+        threadId,
+        pluginId: bb.pluginId,
+        set: { [LINKS_KEY]: next },
+      });
+      bb.realtime.publish(LINKS_CHANGED, { threadId });
+    }
+    return next;
+  }
+
+  const threadOption = {
+    type: "string",
+    description: "Thread to act on; defaults to the thread running the command",
+  } as const;
+
+  function resolveThread(explicit: string | undefined, ctx: { threadId?: string }): string {
+    const threadId = explicit ?? ctx.threadId;
+    if (!threadId) {
+      throw new PluginCliError("no thread to link to", {
+        code: "thread_required",
+        hint: "Run this from an agent thread, or pass --thread <thread-id>.",
+      });
+    }
+    return threadId;
+  }
+
+  function requireUrl(raw: string): string {
+    const url = canonicalPullRequestUrl(raw);
+    if (url === null) {
+      throw new PluginCliError(`not a GitHub pull request URL: ${raw.slice(0, 200)}`, {
+        code: "invalid_url",
+        hint: "Use https://github.com/<owner>/<repo>/pull/<number>.",
+      });
+    }
+    return url;
+  }
+
+  async function subscriptionCommand(threadId: string, raw: string | string[], add: boolean) {
+    const values = (Array.isArray(raw) ? raw : [raw]).flatMap((value) => value.split(",")).filter(Boolean);
+    try {
+      return await subscriptions.mutate(threadId, values, add);
+    } catch (cause) {
+      throw new PluginCliError(cause instanceof Error ? cause.message : "Subscription failed.", { code: "subscription_failed" });
+    }
+  }
+
+  bb.agents.registerTool({
+    name: "pull_request_subscriptions",
+    description:
+      "Subscribe or unsubscribe this thread to GitHub pull request updates, or list its subscriptions. IDs: PR URL, owner/repo#123, or a bare number in a project with a GitHub remote. A message arrives in this thread when a followed pull request changes.",
+    parameters: z.object({
+      action: z.enum(["subscribe", "unsubscribe", "list"]),
+      prs: z.array(z.string()).max(50).optional(),
+    }),
+    async execute(input, ctx) {
+      if (input.action === "list") return JSON.stringify(await subscriptions.list(ctx.threadId));
+      if (!input.prs?.length) return JSON.stringify({ error: "Pass prs: one or more pull requests." });
+      return JSON.stringify(await subscriptions.mutate(ctx.threadId, input.prs, input.action === "subscribe"));
+    },
+  });
+
+  bb.cli.register(
+    defineCli({
+      name: "pull-requests",
+      summary: "Link GitHub pull requests to a thread, or subscribe it to their updates",
+      commands: {
+        link: cliCommand({
+          summary: "Link a pull request to this thread (shows a pill above the composer)",
+          positionals: [
+            { name: "url", description: "https://github.com/<owner>/<repo>/pull/<number>", required: true },
+          ],
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const url = requireUrl(input.positionals.url);
+            const urls = await changeLinks(resolveThread(input.options.thread, ctx), url, "link");
+            return {
+              exitCode: 0,
+              stdout: input.options.json ? JSON.stringify({ ok: true, urls }) : `Linked ${url}\n`,
+            };
+          },
+        }),
+        unlink: cliCommand({
+          summary: "Remove a linked pull request from this thread",
+          positionals: [
+            { name: "url", description: "https://github.com/<owner>/<repo>/pull/<number>", required: true },
+          ],
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const url = requireUrl(input.positionals.url);
+            const urls = await changeLinks(resolveThread(input.options.thread, ctx), url, "unlink");
+            return {
+              exitCode: 0,
+              stdout: input.options.json ? JSON.stringify({ ok: true, urls }) : `Unlinked ${url}\n`,
+            };
+          },
+        }),
+        subscribe: cliCommand({
+          summary: "Follow pull requests from this thread; a message arrives when one changes",
+          positionals: [
+            {
+              name: "pr",
+              description: "PR URL, owner/repo#123, or a bare number in a project with a GitHub remote",
+              required: true,
+              variadic: true,
+            },
+          ],
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const result = await subscriptionCommand(resolveThread(input.options.thread, ctx), input.positionals.pr, true);
+            return {
+              exitCode: 0,
+              stdout: input.options.json
+                ? JSON.stringify({ ok: true, ...result })
+                : `Subscribed: ${result.urls.map(shortId).join(", ")}. The first check sets the baseline.\n`,
+            };
+          },
+        }),
+        unsubscribe: cliCommand({
+          summary: "Stop following pull requests from this thread",
+          positionals: [
+            { name: "pr", description: "PR URL, owner/repo#123, or a bare number", required: true, variadic: true },
+          ],
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const result = await subscriptionCommand(resolveThread(input.options.thread, ctx), input.positionals.pr, false);
+            return {
+              exitCode: 0,
+              stdout: input.options.json
+                ? JSON.stringify({ ok: true, ...result })
+                : `Unsubscribed: ${result.urls.map(shortId).join(", ")}.\n`,
+            };
+          },
+        }),
+        subscriptions: cliCommand({
+          summary: "List the pull requests this thread follows",
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const result = await subscriptions.list(resolveThread(input.options.thread, ctx));
+            return {
+              exitCode: 0,
+              stdout: input.options.json
+                ? JSON.stringify({ ok: true, ...result })
+                : result.subscriptions.length === 0
+                  ? "No subscriptions in this thread.\n"
+                  : result.subscriptions
+                      .map((s) => `${shortId(s.url)} — ${s.error ?? s.snapshot?.state ?? "waiting for first check"}`)
+                      .join("\n") + "\n",
+            };
+          },
+        }),
+        list: cliCommand({
+          summary: "List the pull requests linked to this thread",
+          options: { thread: threadOption, json: { type: "boolean", description: "Emit JSON" } },
+          async run(input, ctx) {
+            const urls = await readLinks(resolveThread(input.options.thread, ctx));
+            return {
+              exitCode: 0,
+              stdout: input.options.json
+                ? JSON.stringify({ ok: true, urls })
+                : urls.length === 0
+                  ? "No linked pull requests.\n"
+                  : urls.join("\n") + "\n",
+            };
+          },
+        }),
+      },
+    }),
+  );
 
   bb.log.info("loaded");
 }

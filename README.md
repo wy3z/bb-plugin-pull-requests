@@ -23,6 +23,49 @@ Not ported: Zeron's device switcher (BB runs `gh` on the server's machine),
 its custom code viewer (BB's `experimental_Diff` is used instead), comment
 @-mention completion, and image lightboxes.
 
+## In threads
+
+- **A PRs tray above the composer**, after Cursor's agent-prs-tray: a "PRs"
+  chip with the open count opens a tray headed "N Open", newest first, then
+  merged and closed ones under "N Done" (three at a time). Each row has
+  Cursor's status icon, the title, `#N` and a status word (Draft, Conflicts,
+  CI Failing, Ready, Waiting for Reviewers); hovering swaps the word for Add to
+  chat, which puts the URL in the composer. A click opens it in the side
+  panel, Ctrl or middle-click opens GitHub. The branch's pull request (from
+  GitHub PR Status) is highlighted. Status rules live in `lib/status.ts`. The
+  chip and panel shell use Agent Pills' classes, so that plugin should be on.
+- **Linking.** `bb pull-requests link <url>` (also `unlink`, `list`) links a
+  pull request to the thread running the command, or `--thread <id>`. Links
+  live in the thread's plugin metadata, at most 12 per thread.
+- **Subscriptions** (moved here from the Subscriptions plugin, GitHub only):
+  a thread can follow pull requests and gets one `[Subscription update]`
+  message when they change (state, commits, reviews, comments, checks, labels,
+  assignees). Subscribe from the **Subscribe** button in the pull request
+  viewer's side-panel tab, `bb pull-requests subscribe|unsubscribe <pr…>`,
+  `bb pull-requests subscriptions`, or the `pull_request_subscriptions` agent
+  tool. A "Listening N" chip above the composer opens a tray of what the
+  thread follows; a row opens the pull request, hover swaps the last-check
+  time for remove. The checker (`lib/subscriptions.ts`) runs as the `watch`
+  background service: every 60s by default, the first check is a silent
+  baseline, changes within 10s go out as one message, a message still queued
+  is rewritten rather than stacked. Both intervals are plugin settings.
+- **Links in messages**, after Cursor's composer markdown: any markdown link
+  to a github.com pull request gets a live lifecycle icon (open, draft, merged,
+  closed), reads `#N` when its text is just the URL or number, and has a hover
+  card (title, status, "Opened 4h ago by @x on owner/repo"). A click opens it
+  in the side panel; Ctrl or middle-click opens GitHub. BB renders message markdown
+  itself, so an app overlay decorates the links in place.
+  `::pull-request{url="…"}` on its own line renders the same link.
+- **Tabs** read "PR #N", as in Cursor, and the icon takes the lifecycle
+  colour (open, draft, merged, closed). Tab titles are plain text, so the
+  title ends in an invisible marker that `app.css` matches.
+- **Agents** learn both from `skills/pull-requests/SKILL.md`.
+
+To keep one pull request pill, turn off GitHub PR Status's own one:
+`bb plugin config bb--github-pr-status set showPullRequest false`. That also
+drops its Mark ready and Merge buttons above the composer; set it back to
+`true` to restore them.
+
 ## Icons from Cursor Sidebar
 
 `components/ui/icon*.tsx`, `components/ui/host-icon-names.ts` and

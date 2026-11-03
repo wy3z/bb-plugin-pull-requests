@@ -38,3 +38,143 @@ html.dark .cs-pi-pink { --cs-pi-fg: oklch(71.8% 0.202 349.761); }
 html.dark .cs-pi-rose { --cs-pi-fg: oklch(71.2% 0.194 13.428); }
 
 .cs-pi-swatch { background-color: var(--cs-pi-swatch); }
+
+/* The composer chip and tray (components/pr/pills.tsx) use Agent Pills'
+   shared Cursor tray classes (bb-agent-pills__pill, __tray-*), so that
+   plugin should be on. */
+
+/* The Listening tray (components/pr/listening.tsx). */
+.bb-pr-listening__connective {
+  color: var(--muted-foreground);
+}
+.bb-agent-pills__tray-description[data-error] {
+  color: var(--destructive, oklch(0.65 0.2 25));
+}
+.bb-pr-listening__error {
+  margin: 4px 8px 6px;
+  color: var(--destructive, oklch(0.65 0.2 25));
+  font-size: 12px;
+}
+
+/* Pull request links in messages, after Cursor: an ordinary link led by a
+   13px lifecycle icon (components/pr/inline-link.tsx). */
+.bb-pr-link {
+  white-space: nowrap;
+}
+.bb-pr-link--own {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.bb-pr-link--own:hover {
+  text-decoration-color: currentColor;
+}
+/* Bare links show #N beside React's text, which is hidden rather than replaced. */
+.bb-pr-link--compact {
+  font-size: 0 !important;
+}
+.bb-pr-link--compact > .bb-pr-link__label,
+.bb-pr-link--compact > .bb-pr-link__slot {
+  font-size: var(--bb-pr-font-size, 0.875rem);
+}
+.bb-pr-link__slot {
+  display: inline;
+}
+.bb-pr-link__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin-inline-end: 0.25em;
+  vertical-align: -0.125em;
+  color: var(--muted-foreground);
+}
+.bb-pr-link__icon svg,
+.bb-pr-link__icon [data-icon-root] {
+  width: 13px;
+  height: 13px;
+}
+.bb-pr-link__icon[data-status="open"], .bb-pr-card__badge[data-status="open"] { --bb-pr-tone: #3fb950; }
+.bb-pr-link__icon[data-status="draft"], .bb-pr-card__badge[data-status="draft"] { --bb-pr-tone: #8b949e; }
+.bb-pr-link__icon[data-status="merged"], .bb-pr-card__badge[data-status="merged"] { --bb-pr-tone: #a371f7; }
+.bb-pr-link__icon[data-status="closed"], .bb-pr-card__badge[data-status="closed"] { --bb-pr-tone: #f85149; }
+.bb-pr-link__icon[data-status]:not([data-status="unknown"]) { color: var(--bb-pr-tone); }
+
+.bb-pr-card {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: 360px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  color: var(--popover-foreground, var(--foreground));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  font-size: 13px;
+  line-height: 18px;
+}
+.bb-pr-card__title {
+  font-weight: 500;
+  color: var(--foreground);
+}
+.bb-pr-card__number,
+.bb-pr-card__meta {
+  color: var(--muted-foreground);
+}
+.bb-pr-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 4px 0 3px;
+  border-radius: 4px;
+  vertical-align: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--bb-pr-tone);
+  background: color-mix(in oklab, var(--bb-pr-tone) 16%, transparent);
+}
+.bb-pr-card__badge svg,
+.bb-pr-card__badge [data-icon-root] {
+  width: 12px;
+  height: 12px;
+}
+.bb-pr-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.bb-pr-card__opened {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.bb-pr-card__repo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Darker raised surface for this plugin's cards and rows (theme default #202122). */
+.dark [data-bb-plugin="pull-requests"] {
+  --surface-raised: #181818;
+}
+
+/* Pull request tabs: colour the tab's icon by lifecycle (open, merged,
+   closed, draft), as Cursor's PR tabs do. The title ends in an invisible
+   marker (LIFECYCLE_MARK in components/pr/pills.tsx). */
+[data-tab-pill]:has([title$="\2060\200B"]) [data-icon="GitPullRequest"] { color: #3fb950; }
+[data-tab-pill]:has([title$="\2060\200C"]) [data-icon="GitPullRequest"] { color: #a371f7; }
+[data-tab-pill]:has([title$="\2060\200D"]) [data-icon="GitPullRequest"] { color: #f85149; }
+[data-tab-pill]:has([title$="\200C\2060"]) [data-icon="GitPullRequest"] { color: #8b949e; }

@@ -133,7 +133,7 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="flex h-8 shrink-0 items-center rounded-lg bg-muted/50 p-0.5">
+    <div role="tablist" aria-label={label} className="flex h-8 w-fit shrink-0 items-center rounded-lg bg-surface-recessed p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -144,7 +144,7 @@ export function Segmented<T extends string>({
           className={cn(
             "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-3 text-xs transition-colors",
             value === option.value
-              ? "bg-background font-medium text-foreground shadow-sm"
+              ? "bg-surface-raised font-medium text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -180,7 +180,7 @@ export function Chip({
         "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors",
         active
           ? "border-border bg-state-active text-foreground"
-          : "border-transparent bg-muted/50 text-muted-foreground hover:text-foreground",
+          : "border-transparent bg-surface-recessed text-muted-foreground hover:text-foreground",
       )}
     >
       <Icon name={icon} className="size-3.5" />
