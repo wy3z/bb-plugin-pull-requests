@@ -905,17 +905,24 @@ export default async function plugin(bb: BbPluginApi) {
         cache.evictPrefix(`detail:${validatedPullRequestUrl(url).url}`);
         return posted;
       }),
-    summaries: async ({ urls, refresh }) => ({
-      items: await Promise.all(
-        urls.map(async (url) => ({
-          url,
-          summary: await guard(async () => {
-            const canonical = validatedPullRequestUrl(url).url;
-            return cache.get(`summary:${canonical}`, refresh, () => fetchSummary(canonical));
-          }),
-        })),
-      ),
-    }),
+    summaries: async ({ urls, refresh }) => {
+      const outcomes = new Array<Result<PullRequestSummary>>(urls.length);
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(4, urls.length) }, async () => {
+          while (next < urls.length) {
+            const index = next;
+            next += 1;
+            const url = urls[index];
+            outcomes[index] = await guard(async () => {
+              const canonical = validatedPullRequestUrl(url).url;
+              return cache.get(`summary:${canonical}`, refresh, () => fetchSummary(canonical));
+            });
+          }
+        }),
+      );
+      return { items: urls.map((url, index) => ({ url, summary: outcomes[index] })) };
+    },
     linked_list: async ({ threadId }) => ({ urls: await readLinks(threadId) }),
     link: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "link") }),
     unlink: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "unlink") }),

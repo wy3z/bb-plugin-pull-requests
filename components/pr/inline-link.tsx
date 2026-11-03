@@ -183,8 +183,28 @@ function threadIdFor(anchor: Element): string | null {
   return /\/threads\/(thr_[A-Za-z0-9]+)/.exec(window.location.pathname)?.[1] ?? null;
 }
 
-const MESSAGE_LINKS = '[data-message-column] a[href^="https://github.com/"]';
+const MESSAGE_LINKS =
+  '[data-message-column] a[href^="https://github.com/"], [data-message-column] a[data-bb-pr-link]';
+const OURS = ["bb-pr-link__slot", "bb-pr-link__label"];
 const MARK = "bbPrLink";
+
+function linkText(anchor: HTMLAnchorElement): string {
+  let text = "";
+  for (const node of Array.from(anchor.childNodes)) {
+    if (node instanceof Element && OURS.some((name) => node.classList.contains(name))) continue;
+    text += node.textContent ?? "";
+  }
+  return text;
+}
+
+function strip(anchor: HTMLAnchorElement) {
+  for (const child of Array.from(anchor.children)) {
+    if (OURS.some((name) => child.classList.contains(name))) child.remove();
+  }
+  anchor.classList.remove("bb-pr-link", "bb-pr-link--compact");
+  anchor.style.removeProperty("--bb-pr-font-size");
+  delete anchor.dataset[MARK];
+}
 
 /** Adds an icon (and a `#N` label when the text is bare) to one anchor. */
 function decorate(anchor: HTMLAnchorElement): Decorated | null {
@@ -196,7 +216,7 @@ function decorate(anchor: HTMLAnchorElement): Decorated | null {
   const iconHost = document.createElement("span");
   iconHost.className = "bb-pr-link__slot";
   anchor.prepend(iconHost);
-  if (isBareLabel(anchor.textContent ?? "", pr)) {
+  if (isBareLabel(linkText(anchor), pr)) {
     // Leave React's text node alone (it may still be streaming) and show the
     // label beside it; CSS hides the original text.
     anchor.style.setProperty("--bb-pr-font-size", getComputedStyle(anchor).fontSize);
@@ -219,18 +239,31 @@ export function PullRequestLinkDecorator() {
     let frame = 0;
     const scan = () => {
       frame = 0;
-      const added = Array.from(document.querySelectorAll<HTMLAnchorElement>(MESSAGE_LINKS))
-        .map(decorate)
-        .filter((entry): entry is Decorated => entry !== null);
+      const added: Decorated[] = [];
+      const dropped = new Set<HTMLAnchorElement>();
+      for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>(MESSAGE_LINKS))) {
+        const mark = anchor.dataset[MARK];
+        if (mark !== undefined) {
+          const pr = pullRequestHref(anchor.getAttribute("href") ?? "");
+          const compact = anchor.classList.contains("bb-pr-link--compact");
+          if (pr && pr.url === mark && isBareLabel(linkText(anchor), pr) === compact) continue;
+          strip(anchor);
+          dropped.add(anchor);
+        }
+        const entry = decorate(anchor);
+        if (entry) added.push(entry);
+      }
       setLinks((current) => {
-        const live = current.filter((entry) => entry.anchor.isConnected && entry.iconHost.isConnected);
+        const live = current.filter(
+          (entry) => !dropped.has(entry.anchor) && entry.anchor.isConnected && entry.iconHost.isConnected,
+        );
         return added.length === 0 && live.length === current.length ? current : [...live, ...added];
       });
     };
     const observer = new MutationObserver(() => {
       if (frame === 0) frame = window.requestAnimationFrame(scan);
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["href"] });
     scan();
     return () => {
       observer.disconnect();

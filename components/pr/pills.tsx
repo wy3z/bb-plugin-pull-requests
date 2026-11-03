@@ -62,7 +62,9 @@ export function useLinkedPullRequests(threadId: string) {
   return { urls: urls ?? [], loaded: urls !== null, unlink };
 }
 
-/** Summaries for a handful of pull requests, refreshed every minute. */
+const SUMMARY_BATCH = 20;
+
+/** Summaries for a page's pull requests, refreshed every minute. */
 export function useSummaries(urls: readonly string[]) {
   const rpc = useRpc<typeof rpcContract>();
   const key = urls.join("\n");
@@ -71,16 +73,26 @@ export function useSummaries(urls: readonly string[]) {
     if (key === "") return;
     let live = true;
     const list = key.split("\n");
+    const batches: string[][] = [];
+    for (let index = 0; index < list.length; index += SUMMARY_BATCH) batches.push(list.slice(index, index + SUMMARY_BATCH));
     const load = (refresh: boolean) =>
-      rpc.call("summaries", { urls: list, refresh }).then(
-        (result) => {
-          if (!live) return;
-          setSummaries(
-            new Map(result.items.flatMap((item) => (item.summary.ok ? [[item.url, item.summary.value] as const] : []))),
-          );
-        },
-        () => undefined,
-      );
+      Promise.allSettled(batches.map((batch) => rpc.call("summaries", { urls: batch, refresh }))).then((results) => {
+        if (!live) return;
+        setSummaries((current) => {
+          const next = new Map<string, PullRequestSummary>();
+          for (const url of list) {
+            const known = current.get(url);
+            if (known) next.set(url, known);
+          }
+          for (const result of results) {
+            if (result.status !== "fulfilled") continue;
+            for (const item of result.value.items) {
+              if (item.summary.ok) next.set(item.url, item.summary.value);
+            }
+          }
+          return next;
+        });
+      });
     void load(false);
     const timer = window.setInterval(() => void load(false), SUMMARY_REFRESH_MS);
     return () => {

@@ -343,6 +343,7 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
   async function canonicalize(threadId: string, raw: string[]): Promise<string[]> {
     let repository: string | null | undefined;
     const out: string[] = [];
+    const seen = new Set<string>();
     for (const value of raw) {
       const text = value.trim();
       let url = deps.canonicalUrl(text);
@@ -362,32 +363,37 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
           `Not a pull request: ${text.slice(0, 200)}. Use a GitHub PR URL or owner/repo#123; a bare number works in a project with a GitHub remote.`,
         );
       }
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push(url);
     }
-    return [...new Set(out)];
+    return out;
   }
 
   async function mutate(threadId: string, raw: string[], add: boolean): Promise<{ urls: string[] }> {
     const urls = await canonicalize(threadId, raw);
     return serial(async () => {
       db.transaction(() => {
+        const followed = new Set(rows(threadId).map((row) => row.url.toLowerCase()));
         if (add) {
-          const fresh = urls.filter(
-            (url) => !db.prepare("SELECT 1 FROM subscriptions WHERE thread=? AND url=?").get(threadId, url),
-          ).length;
-          if (rows(threadId).length + fresh > MAX_PER_THREAD) {
+          const fresh = urls.filter((url) => !followed.has(url.toLowerCase())).length;
+          if (followed.size + fresh > MAX_PER_THREAD) {
             throw new Error(`Maximum ${MAX_PER_THREAD} subscriptions per thread.`);
           }
         }
         for (const url of urls) {
           if (add) {
+            if (followed.has(url.toLowerCase())) continue;
             db.prepare("INSERT OR IGNORE INTO subscriptions (thread,url,generation) VALUES (?,?,?)").run(
               threadId,
               url,
               randomUUID(),
             );
+            followed.add(url.toLowerCase());
           } else {
-            db.prepare("DELETE FROM subscriptions WHERE thread=? AND url=?").run(threadId, url);
+            db.prepare("DELETE FROM subscriptions WHERE thread=? AND url=? COLLATE NOCASE").run(threadId, url);
+            followed.delete(url.toLowerCase());
           }
         }
       })();
