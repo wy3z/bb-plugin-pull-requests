@@ -3,9 +3,9 @@
 // into a reply with `::pull-request{url="…"}`. Both open the pull request in
 // the thread's side panel.
 //
-// The pills reuse Agent Pills' `bb-agent-pills__pill` classes so they sit in
-// the same row with the same look; app.css carries a fallback for when that
-// plugin is off.
+// The chips are styled by this plugin's own `bb-pr-` classes in app.css (a
+// minimal copy of Cursor's pill and tray look), so nothing here depends on
+// another plugin being installed.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -247,7 +247,7 @@ function TrayRow({
       role="menuitem"
       tabIndex={0}
       aria-label={ariaLabel}
-      className="bb-agent-pills__tray-row"
+      className="bb-pr-tray__row"
       data-active={active || undefined}
       onClick={(event) => {
         // Cursor: a modified click opens GitHub instead.
@@ -264,16 +264,16 @@ function TrayRow({
         }
       }}
     >
-      <span className="bb-agent-pills__tray-leading" data-tone={status?.tone} aria-hidden="true">
+      <span className="bb-pr-tray__leading" data-tone={status?.tone} aria-hidden="true">
         <Icon name={status?.icon ?? "GitPullRequest"} />
       </span>
-      <span className="bb-agent-pills__tray-label">{title}</span>
-      <span className="bb-agent-pills__tray-suffix">#{number}</span>
-      <span className="bb-agent-pills__tray-end">
-        <span className="bb-agent-pills__tray-actions">
+      <span className="bb-pr-tray__label">{title}</span>
+      <span className="bb-pr-tray__suffix">#{number}</span>
+      <span className="bb-pr-tray__end">
+        <span className="bb-pr-tray__actions">
           <button
             type="button"
-            className="bb-agent-pills__tray-icon-button"
+            className="bb-pr-tray__icon"
             aria-label={`Add ${title} to chat`}
             title="Add to chat"
             onClick={(event) => {
@@ -284,7 +284,7 @@ function TrayRow({
             <Icon name="Plus" />
           </button>
         </span>
-        {status?.label ? <span className="bb-agent-pills__tray-meta">{status.label}</span> : null}
+        {status?.label ? <span className="bb-pr-tray__meta">{status.label}</span> : null}
       </span>
     </div>
   );
@@ -355,28 +355,28 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
   );
 
   return (
-    <div className="bb-agent-pills" data-bb-agent-pills="" ref={rootRef}>
-      <div className="bb-agent-pills__row">
+    <div className="bb-pr-chips" data-bb-plugin-root="" ref={rootRef}>
+      <div className="bb-pr-chips__row">
         <button
           type="button"
-          className="bb-agent-pills__pill"
+          className="bb-pr-chips__pill"
           data-group="pull-requests"
           aria-expanded={open}
           aria-haspopup="menu"
           aria-label={openRows.length > 0 ? `PRs, ${openRows.length} open` : "PRs"}
           onClick={() => setOpen((current) => !current)}
         >
-          <span className="bb-agent-pills__label">PRs</span>
-          {openRows.length > 0 ? <span className="bb-agent-pills__chip-count">{openRows.length}</span> : null}
+          <span className="bb-pr-chips__label">PRs</span>
+          {openRows.length > 0 ? <span className="bb-pr-chips__count">{openRows.length}</span> : null}
         </button>
       </div>
       {open ? (
-        <div className="bb-agent-pills__panel bb-agent-pills__tray" role="menu" aria-label="Pull requests">
-          <div className="bb-agent-pills__tray-header">
-            <span className="bb-agent-pills__tray-title">{header}</span>
+        <div className="bb-pr-tray" role="menu" aria-label="Pull requests">
+          <div className="bb-pr-tray__header">
+            <span className="bb-pr-tray__title">{header}</span>
             <button
               type="button"
-              className="bb-agent-pills__tray-icon-button"
+              className="bb-pr-tray__icon"
               aria-label="Minimize"
               title="Minimize (Esc)"
               onClick={() => setOpen(false)}
@@ -384,16 +384,16 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
               <Icon name="Minus" />
             </button>
           </div>
-          <div className="bb-agent-pills__tray-rows">
+          <div className="bb-pr-tray__rows">
             {openRows.map(renderRow)}
             {doneRows.length > 0 && openRows.length > 0 ? (
-              <div className="bb-agent-pills__tray-subheader">{countLabel(doneRows.length, "Done")}</div>
+              <div className="bb-pr-tray__subheader">{countLabel(doneRows.length, "Done")}</div>
             ) : null}
             {doneRows.slice(0, doneShown).map(renderRow)}
             {hiddenDone > 0 ? (
               <button
                 type="button"
-                className="bb-agent-pills__tray-more"
+                className="bb-pr-tray__more"
                 aria-label={`Show ${Math.min(hiddenDone, NEXT_PAGE)} more done pull ${Math.min(hiddenDone, NEXT_PAGE) === 1 ? "request" : "requests"}`}
                 onClick={() => setDoneShown((count) => count + NEXT_PAGE)}
               >

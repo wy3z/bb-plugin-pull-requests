@@ -4,7 +4,13 @@
 // baseline, changes within the debounce window go out as one message, and a
 // message still waiting in the thread's queue is rewritten rather than
 // stacked.
+//
+// The GitHub subscriptions the Subscriptions plugin recorded before this move
+// are imported once, read-only, from that plugin's database: see
+// `migrateLegacyGithubSubscriptions`.
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -160,6 +166,129 @@ export interface SubscriptionsDeps {
   canonicalUrl(raw: string): string | null;
 }
 
+/** A handle on this plugin's own SQLite database, as the SDK types it. */
+type SqliteHandle = ReturnType<BbPluginApi["storage"]["database"]>;
+
+/** A row of the Subscriptions plugin's database, before validation. */
+const legacyRowSchema = z.object({
+  thread: z.string().min(1).max(200),
+  id: z.string().min(1).max(1000),
+  snapshot: z.string().max(100_000).nullable(),
+  error: z.string().max(10_000).nullable(),
+  checked: z.number().int().nullable(),
+});
+
+interface LegacySubscription {
+  threadId: string;
+  url: string;
+  snapshot: string | null;
+  error: string | null;
+  checkedAt: number | null;
+}
+
+/** A stored snapshot the current schema still understands, as JSON, else null (fresh baseline). */
+function parseLegacySnapshot(raw: string | null): string | null {
+  if (raw === null) return null;
+  try {
+    const parsed = snapshotSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? JSON.stringify(parsed.data) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where the Subscriptions plugin kept its own database, relative to bb's data directory. */
+const LEGACY_DATABASE = ["plugins", "subscriptions", "data.db"] as const;
+/** `owner/repo#12` — the id format the Subscriptions plugin stored GitHub rows under. */
+const LEGACY_GITHUB_ID = /^([\w.-]+)\/([\w.-]+)#([1-9]\d*)$/;
+
+export interface LegacyImportResult {
+  /** Subscriptions added by this run; already-present ones are left alone. */
+  imported: number;
+  /** Threads whose subscription list changed, for a realtime publish. */
+  threads: string[];
+}
+
+export interface LegacyImportOptions {
+  /** bb's data directory, from `bb.server.experimental_dataDir`. */
+  dataDir: string;
+  /** Canonical https://github.com/<owner>/<repo>/pull/<n>, or null. */
+  canonicalUrl(raw: string): string | null;
+}
+
+/**
+ * Adopt the GitHub subscriptions the Subscriptions plugin kept before this
+ * plugin owned them. Its database is opened read-only through
+ * `bb.server.experimental_dataDir` (the SDK's documented read path for a
+ * migration), so the old file is never written, no plugin RPC is needed, and
+ * this also runs when that plugin is disabled or not yet updated.
+ *
+ * Idempotent: every adopted `(thread, url)` is recorded in `legacy_import`, so
+ * running again after a restart neither duplicates a subscription nor
+ * resurrects one the user has since removed here. A remembered snapshot is
+ * carried over, so the first check after the move reports whatever changed
+ * since the old plugin last looked; an unreadable snapshot starts a fresh
+ * silent baseline. Pending legacy changes are not carried over.
+ */
+export function importLegacyGithubSubscriptions(db: SqliteHandle, options: LegacyImportOptions): LegacyImportResult {
+  const legacy = readLegacyGithubSubscriptions(db, options);
+  if (!legacy.length) return { imported: 0, threads: [] };
+  const threads = new Set<string>();
+  let imported = 0;
+  db.transaction(() => {
+    for (const row of legacy) {
+      const adopted = db.prepare("SELECT 1 FROM legacy_import WHERE thread = ? AND url = ?").get(row.threadId, row.url);
+      if (adopted) continue;
+      db.prepare("INSERT OR IGNORE INTO legacy_import (thread, url, imported) VALUES (?, ?, ?)").run(
+        row.threadId,
+        row.url,
+        Date.now(),
+      );
+      // A pull request this thread already follows under different casing is
+      // the same subscription, not a second one.
+      const existing = db
+        .prepare("SELECT 1 FROM subscriptions WHERE thread = ? AND url = ? COLLATE NOCASE")
+        .get(row.threadId, row.url);
+      if (existing) continue;
+      db.prepare(
+        "INSERT INTO subscriptions (thread, url, snapshot, error, checked, due, generation) VALUES (?, ?, ?, ?, ?, 0, ?)",
+      ).run(row.threadId, row.url, parseLegacySnapshot(row.snapshot), row.error, row.checkedAt, randomUUID());
+      imported += 1;
+      threads.add(row.threadId);
+    }
+  })();
+  return { imported, threads: [...threads] };
+}
+
+/** The Subscriptions plugin's GitHub rows, read only, or [] when its database is absent. */
+function readLegacyGithubSubscriptions(db: SqliteHandle, options: LegacyImportOptions): LegacySubscription[] {
+  const path = join(options.dataDir, ...LEGACY_DATABASE);
+  if (!existsSync(path)) return [];
+  // The plugin's own handle is the server's better-sqlite3; its constructor
+  // opens a second, read-only connection to the old file, which is the one
+  // way to read another plugin's database without an SDK API for it.
+  const OpenDatabase = db.constructor as unknown as new (
+    filename: string,
+    options: { readonly: boolean; fileMustExist: boolean },
+  ) => SqliteHandle;
+  const legacy = new OpenDatabase(path, { readonly: true, fileMustExist: true });
+  try {
+    const rows = legacy.prepare("SELECT thread, id, snapshot, error, checked FROM subscriptions WHERE platform = 'github'").all();
+    return rows.flatMap((raw) => {
+      const row = legacyRowSchema.safeParse(raw);
+      if (!row.success) return [];
+      const match = LEGACY_GITHUB_ID.exec(row.data.id.trim());
+      if (!match) return [];
+      const url = options.canonicalUrl(`https://github.com/${match[1]}/${match[2]}/pull/${match[3]}`);
+      return url
+        ? [{ threadId: row.data.thread, url, snapshot: row.data.snapshot, error: row.data.error, checkedAt: row.data.checked }]
+        : [];
+    });
+  } finally {
+    legacy.close();
+  }
+}
+
 export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
   const settings = bb.settings.define({
     intervalSeconds: {
@@ -181,6 +310,10 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
   bb.storage.migrate(db, [
     `CREATE TABLE subscriptions (thread TEXT NOT NULL, url TEXT NOT NULL, snapshot TEXT, error TEXT, checked INTEGER, due INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0, generation TEXT NOT NULL, PRIMARY KEY(thread, url))`,
     `CREATE TABLE pending (thread TEXT PRIMARY KEY, baselines TEXT NOT NULL, flush_at INTEGER NOT NULL, dirty INTEGER NOT NULL DEFAULT 1, queued_id TEXT, queued_updated INTEGER)`,
+    // Every legacy subscription this plugin has adopted, whether or not it is
+    // still followed. A URL the user later unsubscribes is therefore never
+    // re-imported as a fresh subscription.
+    `CREATE TABLE legacy_import (thread TEXT NOT NULL, url TEXT NOT NULL, imported INTEGER NOT NULL, PRIMARY KEY(thread, url))`,
   ]);
   const changed = (threadId: string) => bb.realtime.publish(SUBSCRIPTIONS_CHANGED, { threadId });
   const rows = (threadId: string) =>
@@ -261,6 +394,17 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
       changed(threadId);
       return { urls };
     });
+  }
+
+  /**
+   * One-time import of the GitHub subscriptions the Subscriptions plugin owned
+   * before pull requests took them over. See
+   * `importLegacyGithubSubscriptions` for the rules.
+   */
+  function migrateLegacyGithubSubscriptions(dataDir: string): LegacyImportResult {
+    const result = importLegacyGithubSubscriptions(db, { dataDir, canonicalUrl: deps.canonicalUrl });
+    for (const threadId of result.threads) changed(threadId);
+    return result;
   }
 
   bb.events.on("thread.deleted", ({ thread }) =>
@@ -489,5 +633,5 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
     },
   });
 
-  return { list, mutate };
+  return { list, mutate, migrateLegacyGithubSubscriptions };
 }

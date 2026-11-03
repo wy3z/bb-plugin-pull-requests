@@ -126,11 +126,11 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
   };
 
   return (
-    <div className="bb-agent-pills" data-bb-agent-pills="" ref={root}>
-      <div className="bb-agent-pills__row">
+    <div className="bb-pr-chips" data-bb-plugin-root="" ref={root}>
+      <div className="bb-pr-chips__row">
         <button
           type="button"
-          className="bb-agent-pills__pill"
+          className="bb-pr-chips__pill"
           data-group="listening"
           aria-expanded={open}
           aria-haspopup="menu"
@@ -138,19 +138,19 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
           title={`View subscriptions (${count})`}
           onClick={() => setOpen((value) => !value)}
         >
-          <span className="bb-agent-pills__label">Listening</span>
-          <span className="bb-agent-pills__chip-count">{count}</span>
+          <span className="bb-pr-chips__label">Listening</span>
+          <span className="bb-pr-chips__count">{count}</span>
         </button>
       </div>
       {open ? (
-        <div className="bb-agent-pills__panel bb-agent-pills__tray" role="menu" aria-label="Subscriptions">
-          <div className="bb-agent-pills__tray-header">
-            <span className="bb-agent-pills__tray-title">
+        <div className="bb-pr-tray" role="menu" aria-label="Subscriptions">
+          <div className="bb-pr-tray__header">
+            <span className="bb-pr-tray__title">
               {count} {count === 1 ? "Subscription" : "Subscriptions"}
             </span>
             <button
               type="button"
-              className="bb-agent-pills__tray-icon-button"
+              className="bb-pr-tray__icon"
               aria-label="Minimize"
               title="Minimize (Esc)"
               onClick={() => setOpen(false)}
@@ -158,7 +158,7 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
               <Icon name="Minus" />
             </button>
           </div>
-          <div className="bb-agent-pills__tray-rows">
+          <div className="bb-pr-tray__rows">
             {items.slice(0, shown).map((item) => {
               const { owner, name, number } = prTabParams(item.url);
               const label = `PR activity on #${number}`;
@@ -169,7 +169,7 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
                   role="menuitem"
                   tabIndex={0}
                   aria-label={label}
-                  className="bb-agent-pills__tray-row"
+                  className="bb-pr-tray__row"
                   title={`${item.snapshot?.title ? `${item.snapshot.title} · ` : ""}${owner}/${name}#${number}`}
                   onClick={() => {
                     setOpen(false);
@@ -183,24 +183,24 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
                     }
                   }}
                 >
-                  <span className="bb-agent-pills__tray-leading" aria-hidden="true">
+                  <span className="bb-pr-tray__leading" aria-hidden="true">
                     <Icon name="Github" />
                   </span>
-                  <span className="bb-agent-pills__tray-label">
+                  <span className="bb-pr-tray__label">
                     PR activity <span className="bb-pr-listening__connective">on</span> #{number}
                   </span>
                   <span
-                    className="bb-agent-pills__tray-description"
+                    className="bb-pr-tray__description"
                     data-error={item.error ? "" : undefined}
                   >
                     {state}
                   </span>
-                  <span className="bb-agent-pills__tray-end">
-                    <span className="bb-agent-pills__tray-actions">
+                  <span className="bb-pr-tray__end">
+                    <span className="bb-pr-tray__actions">
                       <button
                         type="button"
                         disabled={busy}
-                        className="bb-agent-pills__tray-icon-button"
+                        className="bb-pr-tray__icon"
                         aria-label={`Remove subscription ${label}`}
                         title="Remove Subscription"
                         onClick={(event) => {
@@ -211,7 +211,7 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
                         <Icon name="Trash2" />
                       </button>
                     </span>
-                    <span className="bb-agent-pills__tray-meta">{item.checkedAt ? ago(now, item.checkedAt) : ""}</span>
+                    <span className="bb-pr-tray__meta">{item.checkedAt ? ago(now, item.checkedAt) : ""}</span>
                   </span>
                 </div>
               );
@@ -219,7 +219,7 @@ export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentP
             {hidden > 0 ? (
               <button
                 type="button"
-                className="bb-agent-pills__tray-more"
+                className="bb-pr-tray__more"
                 aria-label={`Show ${Math.min(hidden, NEXT_PAGE)} more subscriptions`}
                 onClick={() => setShown((value) => value + NEXT_PAGE)}
               >

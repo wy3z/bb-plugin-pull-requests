@@ -6,6 +6,7 @@ Zeron (zeronsh, MIT, v0.2.132), rebuilt on BB's plugin SDK.
 
 ## Requirements
 
+- bb >= 0.48.1.
 - `gh` on the BB server's machine, signed in to github.com (`gh auth login`).
   The active account is the one used: run `gh auth switch` to change it.
 
@@ -33,7 +34,9 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
   chat, which puts the URL in the composer. A click opens it in the side
   panel, Ctrl or middle-click opens GitHub. The branch's pull request (from
   GitHub PR Status) is highlighted. Status rules live in `lib/status.ts`. The
-  chip and panel shell use Agent Pills' classes, so that plugin should be on.
+  chip and tray are styled by this plugin's own `bb-pr-` classes in `app.css`
+  (a minimal copy of Cursor's pill and tray look), so no other plugin has to be
+  installed.
 - **Linking.** `bb pull-requests link <url>` (also `unlink`, `list`) links a
   pull request to the thread running the command, or `--thread <id>`. Links
   live in the thread's plugin metadata, at most 12 per thread.
@@ -48,8 +51,7 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
   time for remove. The checker (`lib/subscriptions.ts`) runs as the `watch`
   background service: every 60s by default, the first check is a silent
   baseline, changes within 10s go out as one message, a message still queued
-  is rewritten rather than stacked. Both intervals are plugin settings.
-- **Links in messages**, after Cursor's composer markdown: any markdown link
+  is rewritten rather than stacked. Both intervals are plugin settings.- **Links in messages**, after Cursor's composer markdown: any markdown link
   to a github.com pull request gets a live lifecycle icon (open, draft, merged,
   closed), reads `#N` when its text is just the URL or number, and has a hover
   card (title, status, "Opened 4h ago by @x on owner/repo"). A click opens it
@@ -60,6 +62,23 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
   colour (open, draft, merged, closed). Tab titles are plain text, so the
   title ends in an invisible marker that `app.css` matches.
 - **Agents** learn both from `skills/pull-requests/SKILL.md`.
+
+## GitHub ownership and the old subscriptions
+
+This plugin is the only watcher and tool for GitHub pull requests. The
+Subscriptions plugin now follows Linear issues only, and its "Listening" chip
+shows those.
+
+Subscriptions recorded before the split (rows in the Subscriptions plugin's
+database) are adopted on this plugin's first start: that database is read
+read-only through `bb.server.experimental_dataDir`, each `owner/repo#N` becomes
+`https://github.com/owner/repo/pull/N`, and the last snapshot is carried over.
+Every adopted pull request is recorded in a `legacy_import` table, so the import
+is idempotent, a restart does not duplicate anything, and a subscription removed
+here is never resurrected from the old file. Because it reads the file rather
+than calling that plugin, it works whether the Subscriptions plugin is enabled,
+disabled, or not yet updated, and it never writes to its database. Pending
+legacy changes are not carried over.
 
 To keep one pull request pill, turn off GitHub PR Status's own one:
 `bb plugin config bb--github-pr-status set showPullRequest false`. That also
@@ -91,6 +110,7 @@ The panel also appears in BB's navigation like any plugin page.
 ```sh
 npm install
 npx tsc --noEmit -p .
+npm test
 bb plugin build
 bb plugin install . --yes   # first time; then: bb plugin reload pull-requests
 ```

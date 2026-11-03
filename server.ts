@@ -797,6 +797,20 @@ const DEFAULT_PREFERENCES: Preferences = { repository: null, filter: "authored",
 
 export default async function plugin(bb: BbPluginApi) {
   const subscriptions = createSubscriptions(bb, { graphql, canonicalUrl: canonicalPullRequestUrl });
+  // Adopt the GitHub subscriptions the Subscriptions plugin used to keep.
+  // Reads its file read-only; failures only mean the next start retries.
+  try {
+    const adopted = subscriptions.migrateLegacyGithubSubscriptions(bb.server.experimental_dataDir);
+    if (adopted.imported > 0) {
+      bb.log.info(`Imported ${adopted.imported} GitHub subscription(s) from the Subscriptions plugin`);
+    }
+  } catch (cause) {
+    bb.log.warn(
+      `Could not import the Subscriptions plugin's GitHub subscriptions; will retry on the next start: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+    );
+  }
   const cache = new RequestCache();
 
   async function readPreferences(): Promise<Preferences> {

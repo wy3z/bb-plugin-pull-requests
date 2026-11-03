@@ -12,6 +12,9 @@ Your open GitHub pull requests in BB, grouped by what each one needs from you.
 - Hand off: start a new thread with a prompt to review the PR, address
   feedback, fix failing checks or resolve conflicts. The prompt is put in
   the composer for you to read before sending.
+- A **Listening** chip with the GitHub pull requests the thread follows, and
+  the `[Subscription update]` messages they produce. This plugin is the only
+  GitHub watcher; Linear subscriptions stay with the Subscriptions plugin.
 
 ## How it works
 

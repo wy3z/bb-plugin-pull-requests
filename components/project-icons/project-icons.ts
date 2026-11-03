@@ -101,24 +101,24 @@ export const PROJECT_ICON_COLORS: ReadonlyArray<{
   readonly label: string;
   readonly className: string;
 }> = [
-  { value: "gray", label: "Gray", className: "cs-pi-gray" },
-  { value: "red", label: "Red", className: "cs-pi-red" },
-  { value: "orange", label: "Orange", className: "cs-pi-orange" },
-  { value: "amber", label: "Amber", className: "cs-pi-amber" },
-  { value: "yellow", label: "Yellow", className: "cs-pi-yellow" },
-  { value: "lime", label: "Lime", className: "cs-pi-lime" },
-  { value: "green", label: "Green", className: "cs-pi-green" },
-  { value: "emerald", label: "Emerald", className: "cs-pi-emerald" },
-  { value: "teal", label: "Teal", className: "cs-pi-teal" },
-  { value: "cyan", label: "Cyan", className: "cs-pi-cyan" },
-  { value: "sky", label: "Sky", className: "cs-pi-sky" },
-  { value: "blue", label: "Blue", className: "cs-pi-blue" },
-  { value: "indigo", label: "Indigo", className: "cs-pi-indigo" },
-  { value: "violet", label: "Violet", className: "cs-pi-violet" },
-  { value: "purple", label: "Purple", className: "cs-pi-purple" },
-  { value: "fuchsia", label: "Fuchsia", className: "cs-pi-fuchsia" },
-  { value: "pink", label: "Pink", className: "cs-pi-pink" },
-  { value: "rose", label: "Rose", className: "cs-pi-rose" },
+  { value: "gray", label: "Gray", className: "bb-pr-pi-gray" },
+  { value: "red", label: "Red", className: "bb-pr-pi-red" },
+  { value: "orange", label: "Orange", className: "bb-pr-pi-orange" },
+  { value: "amber", label: "Amber", className: "bb-pr-pi-amber" },
+  { value: "yellow", label: "Yellow", className: "bb-pr-pi-yellow" },
+  { value: "lime", label: "Lime", className: "bb-pr-pi-lime" },
+  { value: "green", label: "Green", className: "bb-pr-pi-green" },
+  { value: "emerald", label: "Emerald", className: "bb-pr-pi-emerald" },
+  { value: "teal", label: "Teal", className: "bb-pr-pi-teal" },
+  { value: "cyan", label: "Cyan", className: "bb-pr-pi-cyan" },
+  { value: "sky", label: "Sky", className: "bb-pr-pi-sky" },
+  { value: "blue", label: "Blue", className: "bb-pr-pi-blue" },
+  { value: "indigo", label: "Indigo", className: "bb-pr-pi-indigo" },
+  { value: "violet", label: "Violet", className: "bb-pr-pi-violet" },
+  { value: "purple", label: "Purple", className: "bb-pr-pi-purple" },
+  { value: "fuchsia", label: "Fuchsia", className: "bb-pr-pi-fuchsia" },
+  { value: "pink", label: "Pink", className: "bb-pr-pi-pink" },
+  { value: "rose", label: "Rose", className: "bb-pr-pi-rose" },
 ];
 
 export type ProjectIconColor =
@@ -135,7 +135,7 @@ export function isProjectIconColor(value: string): value is ProjectIconColor {
 }
 
 export function projectIconColorClassName(color: ProjectIconColor): string {
-  return `cs-pi-${color}`;
+  return `bb-pr-pi-${color}`;
 }
 
 /**

@@ -68,3 +68,9 @@ bb pull-requests subscriptions
 - The user can also subscribe from the Subscribe button in the pull request
   viewer, and sees what the thread follows in the Listening chip above the
   composer.
+
+This plugin owns GitHub pull request subscriptions. Subscriptions for Linear
+issues belong to the Subscriptions plugin (`thread_subscriptions` /
+`bb subscriptions`); GitHub subscriptions the Subscriptions plugin recorded
+before the split are imported here automatically on first start, so don't
+re-subscribe them.

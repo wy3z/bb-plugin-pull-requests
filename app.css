@@ -1,58 +1,314 @@
-/* Project-icon colours, copied from bb-plugin-cursor-sidebar/app.css so its glyph and monogram icons keep their colour here. */
-.cs-pi-gray { --cs-pi-fg: oklch(44.6% 0.03 256.802); --cs-pi-swatch: oklch(55.1% 0.027 264.364); color: var(--cs-pi-fg); }
-.cs-pi-red { --cs-pi-fg: oklch(57.7% 0.245 27.325); --cs-pi-swatch: oklch(63.7% 0.237 25.331); color: var(--cs-pi-fg); }
-.cs-pi-orange { --cs-pi-fg: oklch(64.6% 0.222 41.116); --cs-pi-swatch: oklch(70.5% 0.213 47.604); color: var(--cs-pi-fg); }
-.cs-pi-amber { --cs-pi-fg: oklch(66.6% 0.179 58.318); --cs-pi-swatch: oklch(76.9% 0.188 70.08); color: var(--cs-pi-fg); }
-.cs-pi-yellow { --cs-pi-fg: oklch(68.1% 0.162 75.834); --cs-pi-swatch: oklch(79.5% 0.184 86.047); color: var(--cs-pi-fg); }
-.cs-pi-lime { --cs-pi-fg: oklch(64.8% 0.2 131.684); --cs-pi-swatch: oklch(76.8% 0.233 130.85); color: var(--cs-pi-fg); }
-.cs-pi-green { --cs-pi-fg: oklch(62.7% 0.194 149.214); --cs-pi-swatch: oklch(72.3% 0.219 149.579); color: var(--cs-pi-fg); }
-.cs-pi-emerald { --cs-pi-fg: oklch(59.6% 0.145 163.225); --cs-pi-swatch: oklch(69.6% 0.17 162.48); color: var(--cs-pi-fg); }
-.cs-pi-teal { --cs-pi-fg: oklch(60% 0.118 184.704); --cs-pi-swatch: oklch(70.4% 0.14 182.503); color: var(--cs-pi-fg); }
-.cs-pi-cyan { --cs-pi-fg: oklch(60.9% 0.126 221.723); --cs-pi-swatch: oklch(71.5% 0.143 215.221); color: var(--cs-pi-fg); }
-.cs-pi-sky { --cs-pi-fg: oklch(58.8% 0.158 241.966); --cs-pi-swatch: oklch(68.5% 0.169 237.323); color: var(--cs-pi-fg); }
-.cs-pi-blue { --cs-pi-fg: oklch(54.6% 0.245 262.881); --cs-pi-swatch: oklch(62.3% 0.214 259.815); color: var(--cs-pi-fg); }
-.cs-pi-indigo { --cs-pi-fg: oklch(51.1% 0.262 276.966); --cs-pi-swatch: oklch(58.5% 0.233 277.117); color: var(--cs-pi-fg); }
-.cs-pi-violet { --cs-pi-fg: oklch(54.1% 0.281 293.009); --cs-pi-swatch: oklch(60.6% 0.25 292.717); color: var(--cs-pi-fg); }
-.cs-pi-purple { --cs-pi-fg: oklch(55.8% 0.288 302.321); --cs-pi-swatch: oklch(62.7% 0.265 303.9); color: var(--cs-pi-fg); }
-.cs-pi-fuchsia { --cs-pi-fg: oklch(59.1% 0.293 322.896); --cs-pi-swatch: oklch(66.7% 0.295 322.15); color: var(--cs-pi-fg); }
-.cs-pi-pink { --cs-pi-fg: oklch(59.2% 0.249 0.584); --cs-pi-swatch: oklch(65.6% 0.241 354.308); color: var(--cs-pi-fg); }
-.cs-pi-rose { --cs-pi-fg: oklch(58.6% 0.253 17.585); --cs-pi-swatch: oklch(64.5% 0.246 16.439); color: var(--cs-pi-fg); }
+/* Project-icon colours, copied from bb-plugin-cursor-sidebar/app.css (its
+   `.cs-pi-*` rules) so its glyph and monogram icons keep their colour here.
+   Renamed to this plugin's own prefix so the two copies cannot collide. */
+.bb-pr-pi-gray { --bb-pr-pi-fg: oklch(44.6% 0.03 256.802); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-red { --bb-pr-pi-fg: oklch(57.7% 0.245 27.325); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-orange { --bb-pr-pi-fg: oklch(64.6% 0.222 41.116); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-amber { --bb-pr-pi-fg: oklch(66.6% 0.179 58.318); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-yellow { --bb-pr-pi-fg: oklch(68.1% 0.162 75.834); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-lime { --bb-pr-pi-fg: oklch(64.8% 0.2 131.684); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-green { --bb-pr-pi-fg: oklch(62.7% 0.194 149.214); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-emerald { --bb-pr-pi-fg: oklch(59.6% 0.145 163.225); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-teal { --bb-pr-pi-fg: oklch(60% 0.118 184.704); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-cyan { --bb-pr-pi-fg: oklch(60.9% 0.126 221.723); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-sky { --bb-pr-pi-fg: oklch(58.8% 0.158 241.966); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-blue { --bb-pr-pi-fg: oklch(54.6% 0.245 262.881); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-indigo { --bb-pr-pi-fg: oklch(51.1% 0.262 276.966); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-violet { --bb-pr-pi-fg: oklch(54.1% 0.281 293.009); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-purple { --bb-pr-pi-fg: oklch(55.8% 0.288 302.321); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-fuchsia { --bb-pr-pi-fg: oklch(59.1% 0.293 322.896); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-pink { --bb-pr-pi-fg: oklch(59.2% 0.249 0.584); color: var(--bb-pr-pi-fg); }
+.bb-pr-pi-rose { --bb-pr-pi-fg: oklch(58.6% 0.253 17.585); color: var(--bb-pr-pi-fg); }
 
-html.dark .cs-pi-gray { --cs-pi-fg: oklch(70.7% 0.022 261.325); }
-html.dark .cs-pi-red { --cs-pi-fg: oklch(70.4% 0.191 22.216); }
-html.dark .cs-pi-orange { --cs-pi-fg: oklch(75% 0.183 55.934); }
-html.dark .cs-pi-amber { --cs-pi-fg: oklch(82.8% 0.189 84.429); }
-html.dark .cs-pi-yellow { --cs-pi-fg: oklch(85.2% 0.199 91.936); }
-html.dark .cs-pi-lime { --cs-pi-fg: oklch(84.1% 0.238 128.85); }
-html.dark .cs-pi-green { --cs-pi-fg: oklch(79.2% 0.209 151.711); }
-html.dark .cs-pi-emerald { --cs-pi-fg: oklch(76.5% 0.177 163.223); }
-html.dark .cs-pi-teal { --cs-pi-fg: oklch(77.7% 0.152 181.912); }
-html.dark .cs-pi-cyan { --cs-pi-fg: oklch(78.9% 0.154 211.53); }
-html.dark .cs-pi-sky { --cs-pi-fg: oklch(74.6% 0.16 232.661); }
-html.dark .cs-pi-blue { --cs-pi-fg: oklch(70.7% 0.165 254.624); }
-html.dark .cs-pi-indigo { --cs-pi-fg: oklch(67.3% 0.182 276.935); }
-html.dark .cs-pi-violet { --cs-pi-fg: oklch(70.2% 0.183 293.541); }
-html.dark .cs-pi-purple { --cs-pi-fg: oklch(71.4% 0.203 305.504); }
-html.dark .cs-pi-fuchsia { --cs-pi-fg: oklch(74% 0.238 322.16); }
-html.dark .cs-pi-pink { --cs-pi-fg: oklch(71.8% 0.202 349.761); }
-html.dark .cs-pi-rose { --cs-pi-fg: oklch(71.2% 0.194 13.428); }
+html.dark .bb-pr-pi-gray { --bb-pr-pi-fg: oklch(70.7% 0.022 261.325); }
+html.dark .bb-pr-pi-red { --bb-pr-pi-fg: oklch(70.4% 0.191 22.216); }
+html.dark .bb-pr-pi-orange { --bb-pr-pi-fg: oklch(75% 0.183 55.934); }
+html.dark .bb-pr-pi-amber { --bb-pr-pi-fg: oklch(82.8% 0.189 84.429); }
+html.dark .bb-pr-pi-yellow { --bb-pr-pi-fg: oklch(85.2% 0.199 91.936); }
+html.dark .bb-pr-pi-lime { --bb-pr-pi-fg: oklch(84.1% 0.238 128.85); }
+html.dark .bb-pr-pi-green { --bb-pr-pi-fg: oklch(79.2% 0.209 151.711); }
+html.dark .bb-pr-pi-emerald { --bb-pr-pi-fg: oklch(76.5% 0.177 163.223); }
+html.dark .bb-pr-pi-teal { --bb-pr-pi-fg: oklch(77.7% 0.152 181.912); }
+html.dark .bb-pr-pi-cyan { --bb-pr-pi-fg: oklch(78.9% 0.154 211.53); }
+html.dark .bb-pr-pi-sky { --bb-pr-pi-fg: oklch(74.6% 0.16 232.661); }
+html.dark .bb-pr-pi-blue { --bb-pr-pi-fg: oklch(70.7% 0.165 254.624); }
+html.dark .bb-pr-pi-indigo { --bb-pr-pi-fg: oklch(67.3% 0.182 276.935); }
+html.dark .bb-pr-pi-violet { --bb-pr-pi-fg: oklch(70.2% 0.183 293.541); }
+html.dark .bb-pr-pi-purple { --bb-pr-pi-fg: oklch(71.4% 0.203 305.504); }
+html.dark .bb-pr-pi-fuchsia { --bb-pr-pi-fg: oklch(74% 0.238 322.16); }
+html.dark .bb-pr-pi-pink { --bb-pr-pi-fg: oklch(71.8% 0.202 349.761); }
+html.dark .bb-pr-pi-rose { --bb-pr-pi-fg: oklch(71.2% 0.194 13.428); }
 
-.cs-pi-swatch { background-color: var(--cs-pi-swatch); }
+/* The composer chips and their trays (components/pr/pills.tsx,
+   components/pr/listening.tsx). These are a minimal subset of the styles in
+   bb-plugin-agent-pills/app.css (`__pill`, `__chip-count`, `__panel`,
+   `__tray-*`), copied so this plugin looks the same with that plugin off and
+   depends on nothing outside its own `bb-pr-` classes. The host's pill-row,
+   popover and selection tokens are still the source of truth. */
+.bb-pr-chips {
+  --bb-pr-pill-surface: color-mix(in oklab, var(--background) 60%, transparent);
+  --bb-pr-pill-surface-hover: var(--surface-selected, var(--state-hover));
+  --bb-pr-pill-outline: var(--border);
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.bb-pr-chips__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-height: 44px;
+  overflow: hidden;
+}
+.bb-pr-chips__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  min-width: 0;
+  max-width: 420px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--bb-pr-pill-outline);
+  border-radius: 999px;
+  background: var(--bb-pr-pill-surface);
+  color: var(--pill-foreground, var(--muted-foreground));
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 450;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.bb-pr-chips__pill:hover,
+.bb-pr-chips__pill[aria-expanded="true"] {
+  border-color: var(--bb-pr-pill-outline);
+  background: var(--bb-pr-pill-surface-hover);
+  color: var(--foreground);
+}
+.bb-pr-chips__pill:focus-visible {
+  outline: 1px solid var(--ring, var(--accent));
+  outline-offset: 1px;
+}
+.bb-pr-chips__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-pr-chips__count {
+  color: var(--subtle-foreground, var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
 
-/* The composer chip and tray (components/pr/pills.tsx) use Agent Pills'
-   shared Cursor tray classes (bb-agent-pills__pill, __tray-*), so that
-   plugin should be on. */
+/* BB's composer context row (section[aria-label="Thread context before
+   sending"]) is `overflow: hidden`. A tray opens above it, so lift that only
+   while this plugin's own tray is open: scoped by `:has` to a row that
+   contains this plugin's chip, so no other surface or plugin is restyled. */
+section[aria-label="Thread context before sending"]:has(.bb-pr-chips [aria-expanded="true"]) {
+  overflow: visible;
+}
+
+.bb-pr-tray {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, calc(100vw - 32px));
+  min-width: 280px;
+  max-width: min(620px, calc(100vw - 32px));
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover, var(--surface-raised-solid, var(--background)));
+  color: var(--popover-foreground, var(--foreground));
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+}
+.bb-pr-tray__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 2px 4px 2px 8px;
+}
+.bb-pr-tray__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.bb-pr-tray__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.bb-pr-tray__icon:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+.bb-pr-tray__icon svg,
+.bb-pr-tray__icon [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+.bb-pr-tray__rows {
+  display: flex;
+  flex-direction: column;
+}
+.bb-pr-tray__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.bb-pr-tray__row:hover,
+.bb-pr-tray__row:focus-visible {
+  background: var(--state-hover);
+  outline: none;
+}
+.bb-pr-tray__row[data-active] {
+  background: var(--state-active, var(--state-hover));
+}
+.bb-pr-tray__leading {
+  display: inline-flex;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+.bb-pr-tray__leading svg,
+.bb-pr-tray__leading [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+/* Tray status colours (lib/status.ts): BB's semantic tokens, with the
+   GitHub/Cursor values as fallbacks. */
+.bb-pr-tray__leading[data-tone="green"] { color: var(--success, #3fb950); }
+.bb-pr-tray__leading[data-tone="red"] { color: var(--destructive-text, #f85149); }
+.bb-pr-tray__leading[data-tone="orange"] { color: var(--warning-text, #db6d28); }
+.bb-pr-tray__leading[data-tone="yellow"] { color: var(--attention, #d29922); }
+.bb-pr-tray__leading[data-tone="purple"] { color: var(--pr-merged, #a371f7); }
+.bb-pr-tray__leading[data-tone="tertiary"] { color: var(--subtle-foreground, var(--muted-foreground)); }
+.bb-pr-tray__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bb-pr-tray__suffix {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.bb-pr-tray__description {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bb-pr-tray__end {
+  display: inline-grid;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-items: end;
+  margin-left: auto;
+  padding-left: 8px;
+}
+.bb-pr-tray__end > * {
+  grid-area: 1 / 1;
+}
+.bb-pr-tray__meta {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bb-pr-tray__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+.bb-pr-tray__row:hover .bb-pr-tray__actions,
+.bb-pr-tray__row:focus-within .bb-pr-tray__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.bb-pr-tray__row:hover .bb-pr-tray__actions ~ .bb-pr-tray__meta,
+.bb-pr-tray__row:focus-within .bb-pr-tray__actions ~ .bb-pr-tray__meta {
+  opacity: 0;
+}
+.bb-pr-tray__subheader {
+  padding: 8px 8px 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.bb-pr-tray__more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.bb-pr-tray__more::before {
+  content: "";
+  flex: 0 0 14px;
+}
+.bb-pr-tray__more:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
 
 /* The Listening tray (components/pr/listening.tsx). */
 .bb-pr-listening__connective {
   color: var(--muted-foreground);
 }
-.bb-agent-pills__tray-description[data-error] {
-  color: var(--destructive, oklch(0.65 0.2 25));
+.bb-pr-tray__description[data-error] {
+  color: var(--destructive-text, oklch(0.65 0.2 25));
 }
 .bb-pr-listening__error {
   margin: 4px 8px 6px;
-  color: var(--destructive, oklch(0.65 0.2 25));
+  color: var(--destructive-text, oklch(0.65 0.2 25));
   font-size: 12px;
 }
 
@@ -97,10 +353,12 @@ html.dark .cs-pi-rose { --cs-pi-fg: oklch(71.2% 0.194 13.428); }
   width: 13px;
   height: 13px;
 }
-.bb-pr-link__icon[data-status="open"], .bb-pr-card__badge[data-status="open"] { --bb-pr-tone: #3fb950; }
-.bb-pr-link__icon[data-status="draft"], .bb-pr-card__badge[data-status="draft"] { --bb-pr-tone: #8b949e; }
-.bb-pr-link__icon[data-status="merged"], .bb-pr-card__badge[data-status="merged"] { --bb-pr-tone: #a371f7; }
-.bb-pr-link__icon[data-status="closed"], .bb-pr-card__badge[data-status="closed"] { --bb-pr-tone: #f85149; }
+/* Lifecycle colours from BB's semantic tokens (the GitHub values are the
+   fallbacks). */
+.bb-pr-link__icon[data-status="open"], .bb-pr-card__badge[data-status="open"] { --bb-pr-tone: var(--success, #3fb950); }
+.bb-pr-link__icon[data-status="draft"], .bb-pr-card__badge[data-status="draft"] { --bb-pr-tone: var(--muted-foreground, #8b949e); }
+.bb-pr-link__icon[data-status="merged"], .bb-pr-card__badge[data-status="merged"] { --bb-pr-tone: var(--pr-merged, #a371f7); }
+.bb-pr-link__icon[data-status="closed"], .bb-pr-card__badge[data-status="closed"] { --bb-pr-tone: var(--destructive-text, #f85149); }
 .bb-pr-link__icon[data-status]:not([data-status="unknown"]) { color: var(--bb-pr-tone); }
 
 .bb-pr-card {
@@ -166,15 +424,11 @@ html.dark .cs-pi-rose { --cs-pi-fg: oklch(71.2% 0.194 13.428); }
   white-space: nowrap;
 }
 
-/* Darker raised surface for this plugin's cards and rows (theme default #202122). */
-.dark [data-bb-plugin="pull-requests"] {
-  --surface-raised: #181818;
-}
-
 /* Pull request tabs: colour the tab's icon by lifecycle (open, merged,
    closed, draft), as Cursor's PR tabs do. The title ends in an invisible
-   marker (LIFECYCLE_MARK in components/pr/pills.tsx). */
-[data-tab-pill]:has([title$="\2060\200B"]) [data-icon="GitPullRequest"] { color: #3fb950; }
-[data-tab-pill]:has([title$="\2060\200C"]) [data-icon="GitPullRequest"] { color: #a371f7; }
-[data-tab-pill]:has([title$="\2060\200D"]) [data-icon="GitPullRequest"] { color: #f85149; }
-[data-tab-pill]:has([title$="\200C\2060"]) [data-icon="GitPullRequest"] { color: #8b949e; }
+   marker (LIFECYCLE_MARK in components/pr/pills.tsx), which only this plugin
+   writes, so the rule cannot match another plugin's tabs. */
+[data-tab-pill]:has([title$="\2060\200B"]) [data-icon="GitPullRequest"] { color: var(--success, #3fb950); }
+[data-tab-pill]:has([title$="\2060\200C"]) [data-icon="GitPullRequest"] { color: var(--pr-merged, #a371f7); }
+[data-tab-pill]:has([title$="\2060\200D"]) [data-icon="GitPullRequest"] { color: var(--destructive-text, #f85149); }
+[data-tab-pill]:has([title$="\200C\2060"]) [data-icon="GitPullRequest"] { color: var(--muted-foreground, #8b949e); }

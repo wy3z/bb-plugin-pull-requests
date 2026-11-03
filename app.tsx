@@ -137,7 +137,9 @@ export default definePluginApp((app) => {
   });
   app.slots.experimental_threadContextSegment({
     id: "listening",
-    title: "Subscriptions",
+    // The GitHub subscriptions this plugin owns; the Subscriptions plugin's
+    // own chip is Linear only.
+    title: "Pull request subscriptions",
     group: "2_pullRequest",
     order: 30,
     summary: ListeningSegment,
