@@ -26,6 +26,8 @@ import {
   type ReviewDecision,
 } from "./lib/model";
 import { createSubscriptions, shortId, type SubscriptionView } from "./lib/subscriptions";
+import { gitActionsContract } from "@wy3z/bb-suite/contracts";
+import { applyLocally, commit, createPullRequest, pushBranch } from "./lib/git-actions";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -840,6 +842,13 @@ export default async function plugin(bb: BbPluginApi) {
       return new Map();
     }
   }
+
+  bb.rpc.register(gitActionsContract, {
+    gitCommit: (input) => commit(bb, input),
+    gitPush: (input) => pushBranch(bb, input),
+    gitCreatePullRequest: (input) => createPullRequest(bb, input),
+    gitApplyLocally: (input) => applyLocally(bb, input),
+  });
 
   bb.rpc.register(rpcContract, {
     repositories: async () => {
