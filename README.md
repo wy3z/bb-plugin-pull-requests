@@ -33,7 +33,10 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
   CI Failing, Ready, Waiting for Reviewers); hovering swaps the word for Add to
   chat, which puts the URL in the composer. A click opens it in the side
   panel, Ctrl or middle-click opens GitHub. The branch's pull request (from
-  GitHub PR Status) is highlighted. Status rules live in `lib/status.ts`. The
+  GitHub PR Status) is highlighted. The tray also lists the pull requests the thread
+  subscribes to, and the branch, linked and subscribed pull requests of its
+  child threads (and theirs, all the
+  way down, archived ones skipped); hovering such a title names the child. Status rules live in `lib/status.ts`. The
   chip and tray are styled by this plugin's own `bb-pr-` classes in `app.css`
   (a minimal copy of Cursor's pill and tray look), so no other plugin has to be
   installed.

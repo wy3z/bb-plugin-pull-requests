@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   experimental_useAppPanel,
   experimental_useRpcKeyedQuery,
+  experimental_useSidebarThreads,
   useBbNavigate,
   useComposer,
   useRealtime,
@@ -180,17 +181,99 @@ const githubPrStatus = defineRpcContract({
   },
 });
 
-/** The branch's pull request, or null (no environment, no PR, plugin off). */
-function useBranchPullRequest(environmentId: string | null): string | null {
+function branchUrl(row: unknown): string | null {
+  const value = row as { outcome?: string; pullRequest?: { url?: unknown } } | undefined;
+  const url = value?.outcome === "available" && typeof value.pullRequest?.url === "string" ? value.pullRequest.url : null;
+  return url && isPullRequestUrl(url) ? url.replace(/\/$/, "") : null;
+}
+
+function useBranchPullRequests(environmentIds: readonly string[]): ReadonlyMap<string, string> {
   const { data } = experimental_useRpcKeyedQuery({
     pluginId: "bb--github-pr-status",
     contract: githubPrStatus,
     method: "pullRequests",
-    keys: environmentId ? [environmentId] : [],
+    keys: [...environmentIds],
   });
-  const row = environmentId ? (data?.[environmentId] as { outcome: string; pullRequest?: { url?: unknown } } | undefined) : undefined;
-  const url = row?.outcome === "available" && typeof row.pullRequest?.url === "string" ? row.pullRequest.url : null;
-  return url && isPullRequestUrl(url) ? url.replace(/\/$/, "") : null;
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    for (const id of environmentIds) {
+      const url = branchUrl(data?.[id]);
+      if (url) map.set(id, url);
+    }
+    return map;
+  }, [data, environmentIds]);
+}
+
+interface ChildThread {
+  id: string;
+  title: string;
+  environmentId: string | null;
+}
+
+function useChildThreads(threadId: string): ChildThread[] {
+  const { threads } = experimental_useSidebarThreads();
+  const key = useMemo(() => {
+    const byParent = new Map<string, typeof threads[number][]>();
+    for (const thread of threads) {
+      if (thread.isArchived || thread.parentThreadId === null) continue;
+      const list = byParent.get(thread.parentThreadId) ?? [];
+      list.push(thread);
+      byParent.set(thread.parentThreadId, list);
+    }
+    const found: ChildThread[] = [];
+    const seen = new Set<string>([threadId]);
+    const queue = [threadId];
+    while (queue.length > 0) {
+      for (const child of byParent.get(queue.shift()!) ?? []) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        queue.push(child.id);
+        found.push({ id: child.id, title: child.displayTitle, environmentId: child.environment?.id ?? null });
+      }
+    }
+    return JSON.stringify(found);
+  }, [threads, threadId]);
+  return useMemo(() => JSON.parse(key) as ChildThread[], [key]);
+}
+
+interface RelatedPullRequests {
+  linked: string[];
+  subscribed: string[];
+}
+
+function useRelatedPullRequests(threadId: string, childIds: readonly string[]): ReadonlyMap<string, RelatedPullRequests> {
+  const rpc = useRpc<typeof rpcContract>();
+  const key = [threadId, ...childIds].join("|");
+  const [related, setRelated] = useState<ReadonlyMap<string, RelatedPullRequests>>(new Map());
+  const load = useCallback(() => {
+    const [own, ...children] = key.split("|");
+    const ids = [own!, ...children];
+    const valid = (urls: string[]) => urls.filter(isPullRequestUrl).map((url) => url.replace(/\/$/, ""));
+    void Promise.all(
+      ids.map(async (id) => {
+        const [linked, subscribed] = await Promise.allSettled([
+          id === own ? Promise.resolve({ urls: [] as string[] }) : rpc.call("linked_list", { threadId: id }),
+          rpc.call("subscriptions_list", { threadId: id }),
+        ]);
+        return [
+          id,
+          {
+            linked: linked.status === "fulfilled" ? valid(linked.value.urls) : [],
+            subscribed:
+              subscribed.status === "fulfilled" ? valid(subscribed.value.subscriptions.map((row) => row.url)) : [],
+          },
+        ] as const;
+      }),
+    ).then((rows) => setRelated(new Map(rows)));
+  }, [rpc, key]);
+  useEffect(load, [load]);
+  const onChange = (payload: unknown) => {
+    const changed = (payload as { threadId?: string } | null)?.threadId;
+    if (changed && key.split("|").includes(changed)) load();
+  };
+  useRealtime("links-changed", onChange);
+  useRealtime("subscriptions-changed", onChange);
+  return related;
 }
 
 interface TrackItem {
@@ -198,21 +281,45 @@ interface TrackItem {
   /** The branch's own pull request, from GitHub PR Status. */
   branch: boolean;
   linked: boolean;
+  from: string | null;
 }
 
-/** Branch PR first, then linked ones in link order, without duplicates. */
 function useTrackItems(threadId: string, environmentId: string | null) {
   const { urls, unlink, loaded } = useLinkedPullRequests(threadId);
-  const branch = useBranchPullRequest(environmentId);
+  const children = useChildThreads(threadId);
+  const childIds = useMemo(() => children.map((child) => child.id), [children]);
+  const environmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (environmentId) ids.add(environmentId);
+    for (const child of children) if (child.environmentId) ids.add(child.environmentId);
+    return [...ids];
+  }, [environmentId, children]);
+  const branches = useBranchPullRequests(environmentIds);
+  const related = useRelatedPullRequests(threadId, childIds);
   const items = useMemo(() => {
     const list: TrackItem[] = [];
+    const seen = new Set<string>();
+    const add = (url: string, item: Omit<TrackItem, "url">) => {
+      const id = url.toLowerCase();
+      if (seen.has(id)) return;
+      seen.add(id);
+      list.push({ url, ...item });
+    };
     const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-    if (branch) list.push({ url: branch, branch: true, linked: urls.some((u) => same(u, branch)) });
-    for (const url of urls) {
-      if (!branch || !same(url, branch)) list.push({ url, branch: false, linked: true });
+    const branch = environmentId ? branches.get(environmentId) : undefined;
+    if (branch) add(branch, { branch: true, linked: urls.some((u) => same(u, branch)), from: null });
+    for (const url of urls) add(url, { branch: false, linked: true, from: null });
+    for (const url of related.get(threadId)?.subscribed ?? []) add(url, { branch: false, linked: false, from: null });
+    for (const child of children) {
+      const childBranch = child.environmentId ? branches.get(child.environmentId) : undefined;
+      if (childBranch) add(childBranch, { branch: false, linked: false, from: child.title });
+      const childRelated = related.get(child.id);
+      for (const url of [...(childRelated?.linked ?? []), ...(childRelated?.subscribed ?? [])]) {
+        add(url, { branch: false, linked: false, from: child.title });
+      }
     }
     return list;
-  }, [urls, branch]);
+  }, [urls, branches, environmentId, threadId, children, related]);
   return { items, unlink, loaded };
 }
 
@@ -241,12 +348,14 @@ function TrayRow({
   url,
   summary,
   active,
+  from,
   onOpen,
   onAddToChat,
 }: {
   url: string;
   summary: PullRequestSummary | undefined;
   active: boolean;
+  from: string | null;
   onOpen: (url: string) => void;
   onAddToChat: (url: string) => void;
 }) {
@@ -279,7 +388,9 @@ function TrayRow({
       <span className="bb-pr-tray__leading" data-tone={status?.tone} aria-hidden="true">
         <Icon name={status?.icon ?? "GitPullRequest"} />
       </span>
-      <span className="bb-pr-tray__label">{title}</span>
+      <span className="bb-pr-tray__label" title={from ? `${title} (from ${from})` : title}>
+        {title}
+      </span>
       <span className="bb-pr-tray__suffix">#{number}</span>
       <span className="bb-pr-tray__end">
         <span className="bb-pr-tray__actions">
@@ -361,6 +472,7 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
       url={row.url}
       summary={row.summary}
       active={row.branch}
+      from={row.from}
       onOpen={openOne}
       onAddToChat={addToChat}
     />

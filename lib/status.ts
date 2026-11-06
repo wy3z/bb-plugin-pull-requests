@@ -43,7 +43,7 @@ export const TRAY_STATUS: Record<TrayStatus, { icon: IconName; tone: string; lab
   conflict: { icon: "DiffConflict", tone: "orange", label: "Conflicts" },
   "ready-to-merge": { icon: "GitPullRequestArrow", tone: "green", label: "Ready" },
   "ci-failing": { icon: "X", tone: "red", label: "CI Failing" },
-  "needs-review": { icon: "Search", tone: "yellow", label: "Waiting for Reviewers" },
+  "needs-review": { icon: "GitPullRequest", tone: "green", label: "Waiting for Reviewers" },
   merged: { icon: "GitMerge", tone: "purple", label: null },
   closed: { icon: "GitPullRequestClosed", tone: "red", label: null },
 };
