@@ -580,6 +580,30 @@ async function postComment(rawUrl: string, body: string): Promise<PullRequestCom
   };
 }
 
+export interface PullRequestCommit {
+  oid: string;
+  headline: string;
+  author: string;
+  committedAt: string;
+}
+
+async function fetchCommits(rawUrl: string): Promise<PullRequestCommit[]> {
+  const { url } = validatedPullRequestUrl(rawUrl);
+  const value = await ghJson(["pr", "view", url, "--json", "commits"]);
+  const commits: any[] = Array.isArray(value.commits) ? value.commits : [];
+  return commits.map((commit) => ({
+    oid: String(commit.oid ?? ""),
+    headline: String(commit.messageHeadline ?? ""),
+    author: String(commit.authors?.[0]?.login || commit.authors?.[0]?.name || ""),
+    committedAt: String(commit.committedDate ?? ""),
+  }));
+}
+
+async function ghMutate(args: string[]): Promise<void> {
+  const output = await runGh(args);
+  if (!output.success) throw new GhError(classifyFailure(output.stderr));
+}
+
 /** A pull request's pill: identity, state and CI, from one `gh pr view`. */
 export interface PullRequestSummary {
   url: string;
@@ -782,6 +806,26 @@ export const rpcContract = defineRpcContract({
     input: z.object({ url: urlSchema, body: z.string().trim().min(1).max(60_000) }),
     output: result<PullRequestComment>(),
   },
+  pr_commits: {
+    input: z.object({ url: urlSchema, refresh: z.boolean() }),
+    output: result<PullRequestCommit[]>(),
+  },
+  pr_rename: {
+    input: z.object({ url: urlSchema, title: z.string().trim().min(1).max(256) }),
+    output: result<{ ok: true }>(),
+  },
+  pr_ready: {
+    input: z.object({ url: urlSchema }),
+    output: result<{ ok: true }>(),
+  },
+  pr_merge: {
+    input: z.object({ url: urlSchema, method: z.enum(["merge", "squash", "rebase"]) }),
+    output: result<{ ok: true }>(),
+  },
+  pr_set_state: {
+    input: z.object({ url: urlSchema, state: z.enum(["close", "reopen"]) }),
+    output: result<{ ok: true }>(),
+  },
   summaries: {
     input: z.object({ urls: z.array(urlSchema).max(20), refresh: z.boolean() }),
     output: z.custom<{ items: { url: string; summary: Result<PullRequestSummary> }[] }>(),
@@ -848,6 +892,9 @@ export default async function plugin(bb: BbPluginApi) {
     );
   }
   const cache = new RequestCache();
+  const forget = (canonical: string) => {
+    for (const prefix of ["detail:", "summary:", "commits:", "diff:"]) cache.evictPrefix(`${prefix}${canonical}`);
+  };
 
   async function readPreferences(): Promise<Preferences> {
     const stored = await bb.storage.kv.get<Partial<Preferences>>(PREFERENCES_KEY);
@@ -940,6 +987,39 @@ export default async function plugin(bb: BbPluginApi) {
       guard(async () => {
         const canonical = validatedPullRequestUrl(url).url;
         return cache.get(`diff:${canonical}`, refresh, () => fetchDiff(canonical));
+      }),
+    pr_commits: ({ url, refresh }) =>
+      guard(async () => {
+        const canonical = validatedPullRequestUrl(url).url;
+        return cache.get(`commits:${canonical}`, refresh, () => fetchCommits(canonical));
+      }),
+    pr_rename: ({ url, title }) =>
+      guard(async () => {
+        const canonical = validatedPullRequestUrl(url).url;
+        await ghMutate(["pr", "edit", canonical, "--title", title]);
+        forget(canonical);
+        return { ok: true as const };
+      }),
+    pr_ready: ({ url }) =>
+      guard(async () => {
+        const canonical = validatedPullRequestUrl(url).url;
+        await ghMutate(["pr", "ready", canonical]);
+        forget(canonical);
+        return { ok: true as const };
+      }),
+    pr_merge: ({ url, method }) =>
+      guard(async () => {
+        const canonical = validatedPullRequestUrl(url).url;
+        await ghMutate(["pr", "merge", canonical, `--${method}`]);
+        forget(canonical);
+        return { ok: true as const };
+      }),
+    pr_set_state: ({ url, state }) =>
+      guard(async () => {
+        const canonical = validatedPullRequestUrl(url).url;
+        await ghMutate(["pr", state, canonical]);
+        forget(canonical);
+        return { ok: true as const };
       }),
     comment: ({ url, body }) =>
       guard(async () => {

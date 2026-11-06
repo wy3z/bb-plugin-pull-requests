@@ -15,6 +15,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { TRAY_STATUS, trayStatus } from "@/lib/status";
+import type { PullRequestSummary } from "../../server";
 import {
   assess,
   CI_LABEL,
@@ -552,15 +554,6 @@ function Row({
       : item.reviewDecision === "changesRequested"
         ? "text-[var(--attention)]"
         : "text-muted-foreground";
-  const ciTone =
-    item.ci.state === "failed"
-      ? "text-[color-mix(in_oklab,var(--destructive-text)_80%,transparent)]"
-      : item.ci.state === "passed"
-        ? "text-[color-mix(in_oklab,var(--success)_80%,transparent)]"
-        : "text-muted-foreground";
-  const ciLabel = item.headRefOid
-    ? `${CI_LABEL[item.ci.state]} · ${item.headRefOid.slice(0, 7)}`
-    : CI_LABEL[item.ci.state];
   const ciTooltip = [
     `${CI_LABEL[item.ci.state]} · Commit: ${item.headRefOid || "unavailable"}`,
     assessment.missing.map((m) => MISSING_LABEL[m]).join(" · "),
@@ -570,6 +563,15 @@ function Row({
     .join("\n");
   const stamp = sortField === "opened" ? item.createdAt : item.updatedAt;
   const stampLabel = sortField === "opened" ? "Opened" : "Updated";
+  const tray = TRAY_STATUS[
+    trayStatus({
+      state: "OPEN",
+      isDraft: item.isDraft,
+      mergeability: item.mergeability,
+      ci: item.ci,
+      reviewDecision: item.reviewDecision,
+    } as unknown as PullRequestSummary)
+  ];
   return (
     <div
       role="link"
@@ -583,41 +585,30 @@ function Row({
         }
       }}
       aria-current={selected ? "true" : undefined}
+      title={[ciTooltip, status].filter(Boolean).join("\n")}
       className={cn(
-        "flex min-h-16 cursor-pointer items-center gap-4 px-4 py-2.5 outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
+        "group/pr flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
         selected && "bg-state-active hover:bg-state-active",
       )}
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex min-w-0 items-center gap-2 text-[13px]" title={item.title}>
-          <Icon
-            name={item.isDraft ? "GitPullRequestDraft" : "GitPullRequest"}
-            className={cn("size-3.5 shrink-0", glyphColor(item))}
-          />
-          <span className="min-w-0 truncate">{item.title}</span>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 pl-[22px] text-[11px]">
-          <span className="flex min-w-0 max-w-[150px] items-center gap-[5px] text-muted-foreground">
-            <Avatar login={item.author} />
-            <span className="truncate">{item.author || "Unknown author"}</span>
-          </span>
-          <NumberBadge number={item.number} draft={item.isDraft} />
-          <span className={cn("truncate", ciTone)} title={ciTooltip}>
-            {ciLabel}
-          </span>
-          {status ? <span className={cn("truncate", statusTone)}>{status}</span> : null}
-        </div>
-      </div>
-      <div className="flex w-28 shrink-0 flex-col items-end gap-1">
-        <span
-          className="text-[11px] text-muted-foreground"
-          title={`${stampLabel} ${relativeTime(stamp, now)} · ${new Date(stamp).toLocaleString()}`}
-        >
-          {sortField === "opened" ? `Opened ${compactRelativeTime(stamp, now)}` : compactRelativeTime(stamp, now)}
-        </span>
+      <span className="bb-pr-tray__leading flex size-4 shrink-0 items-center justify-center" data-tone={tray.tone} aria-hidden="true">
+        <Icon name={tray.icon} className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{item.title}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{item.number}</span>
+      {tray.label ? <span className={cn("hidden shrink-0 text-xs sm:inline", statusTone === "text-muted-foreground" ? "text-muted-foreground" : statusTone)}>{tray.label}</span> : null}
+      <span className="w-20 shrink-0 text-right">
         <DiffStats additions={item.additions} deletions={item.deletions} />
-      </div>
-      <StarButton starred={starred} onToggle={onToggleStar} />
+      </span>
+      <span
+        className="w-10 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
+        title={`${stampLabel} ${relativeTime(stamp, now)} · ${new Date(stamp).toLocaleString()}`}
+      >
+        {compactRelativeTime(stamp, now)}
+      </span>
+      <span className={cn("shrink-0", starred ? "" : "opacity-0 transition-opacity group-hover/pr:opacity-100 group-focus-within/pr:opacity-100")}>
+        <StarButton starred={starred} onToggle={onToggleStar} />
+      </span>
     </div>
   );
 }

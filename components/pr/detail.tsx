@@ -1,16 +1,14 @@
-// One pull request, ported from Zeron's crates/ui/src/pull_request_detail.rs
-// (MIT): Summary (status, review, branch, changes, checks, assessment,
-// description), Code (per-file diffs) and Activity (conversation, reviews,
-// inline threads, and an explicit comment box).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_copyToClipboard,
   experimental_Diff as Diff,
   Markdown,
   useBbNavigate,
+  useComposer,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import { shortAge } from "@wy3z/bb-suite/time";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,13 +20,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
-  ACTION_LABEL,
   assess,
-  BLOCKER_LABEL,
   checkStatus,
   factsFromDetail,
   humanize,
-  MISSING_LABEL,
   relativeTime,
   starKey,
   validHeadOid,
@@ -38,12 +33,9 @@ import {
 } from "@/lib/model";
 import { availableHandoffs, HANDOFFS, handoffPrompt } from "@/lib/handoff";
 import { SubscribeButton } from "./listening";
-import type { DiffFile, PullRequestError, RepositoryChoice, rpcContract } from "../../server";
-import { StarButton } from "./board";
+import type { DiffFile, PullRequestCommit, PullRequestError, RepositoryChoice, rpcContract } from "../../server";
 import { RepoIcon } from "@/components/project-icons/RepoIcon";
 import { Avatar, DiffStats, EmptyAction, EmptyState, ERROR_COPY, Segmented, useNow } from "./common";
-
-type Tab = "summary" | "code" | "activity";
 
 type Tone = "neutral" | "positive" | "warning" | "negative" | "merged";
 
@@ -153,6 +145,292 @@ function Card({ title, trailing, children }: { title?: string; trailing?: React.
   );
 }
 
+type Tab = "description" | "changes" | "commits" | "reviews" | "checks";
+
+type ChecksVerdict = { label: string; icon: IconName; tone: Tone };
+
+function checksVerdict(detail: PullRequestDetail): ChecksVerdict | null {
+  if (detail.mergeability === "conflicting") return { label: "Checks Awaiting Conflict Resolution", icon: "AlertTriangle", tone: "warning" };
+  switch (assess(factsFromDetail(detail)).ci.state) {
+    case "failed":
+      return { label: "Checks Failed", icon: "CircleX", tone: "negative" };
+    case "pending":
+      return { label: "Checks In Progress", icon: "Clock", tone: "warning" };
+    case "passed":
+      return { label: "All Checks Passed", icon: "CircleCheck", tone: "positive" };
+    default:
+      return null;
+  }
+}
+
+function UnderlineTabs({
+  value,
+  onChange,
+  options,
+}: {
+  value: Tab;
+  onChange: (tab: Tab) => void;
+  options: { value: Tab; label: string; count?: number; icon?: IconName; tone?: Tone }[];
+}) {
+  return (
+    <div role="tablist" aria-label="Pull request sections" className="bb-pr-tabs flex items-end gap-4 border-b border-border">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          onClick={() => onChange(option.value)}
+          className="bb-pr-tab -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-0.5 pb-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground aria-selected:border-foreground aria-selected:text-foreground"
+        >
+          {option.icon ? <Icon name={option.icon} className={cn("size-3.5", option.tone ? TONE_TEXT[option.tone] : undefined)} /> : null}
+          {option.label}
+          {option.count !== undefined ? <span className="text-[11px] tabular-nums text-muted-foreground">{option.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TitleEditor({ title, onRename }: { title: string; onRename: (title: string) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!editing) setDraft(title);
+  }, [title, editing]);
+  const save = async () => {
+    const next = draft.trim();
+    if (next === "" || next === title) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onRename(next);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        disabled={saving}
+        aria-label="Pull request title"
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onFocus={(event) => event.currentTarget.select()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void save();
+          if (event.key === "Escape") {
+            setDraft(title);
+            setEditing(false);
+          }
+        }}
+        onBlur={() => void save()}
+        className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[17px] font-medium leading-[24px] outline-none focus:border-[var(--ring)]"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      title="Rename pull request title"
+      onClick={() => setEditing(true)}
+      className="group/title flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-state-hover"
+    >
+      <h1 className="min-w-0 flex-1 text-[17px] font-medium leading-[24px]">{title}</h1>
+      <Icon name="Edit" className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100" />
+    </button>
+  );
+}
+
+function MergeBox({
+  detail,
+  busy,
+  onReady,
+  onMerge,
+  onState,
+}: {
+  detail: PullRequestDetail;
+  busy: string | null;
+  onReady: () => void;
+  onMerge: (method: "merge" | "squash" | "rebase") => void;
+  onState: (state: "close" | "reopen") => void;
+}) {
+  const [method, setMethod] = useState<"merge" | "squash" | "rebase">("squash");
+  const state = detail.state.toUpperCase();
+  if (state === "MERGED") {
+    return (
+      <section className="bb-pr-merge flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-[13px]">
+        <Icon name="GitMerge" className={cn("size-4", TONE_TEXT.merged)} />
+        Merged
+      </section>
+    );
+  }
+  if (state === "CLOSED") {
+    return (
+      <section className="bb-pr-merge flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-[13px]">
+        <Icon name="CircleX" className={cn("size-4", TONE_TEXT.negative)} />
+        <span className="flex-1">This pull request is closed.</span>
+        <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => onState("reopen")}>
+          {busy === "reopen" ? "Reopening…" : "Reopen"}
+        </Button>
+      </section>
+    );
+  }
+  const verdict = checksVerdict(detail);
+  const line =
+    detail.mergeability === "conflicting"
+      ? { text: "This branch has conflicts that must be resolved", tone: "negative" as Tone, icon: "AlertTriangle" as IconName }
+      : verdict?.tone === "negative"
+        ? { text: "Some checks were not successful", tone: "negative" as Tone, icon: "CircleX" as IconName }
+        : verdict?.tone === "warning"
+          ? { text: "Checks are running", tone: "warning" as Tone, icon: "Clock" as IconName }
+          : verdict?.tone === "positive"
+            ? { text: "All checks have passed", tone: "positive" as Tone, icon: "CircleCheck" as IconName }
+            : { text: "No checks reported", tone: "neutral" as Tone, icon: "Circle" as IconName };
+  return (
+    <section className="bb-pr-merge overflow-hidden rounded-lg border border-border">
+      <div className="flex items-center gap-2 px-4 py-3 text-[13px]">
+        <Icon name={line.icon} className={cn("size-4", TONE_TEXT[line.tone])} />
+        <span className="flex-1">{line.text}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+        {detail.isDraft ? (
+          <Button size="sm" disabled={busy !== null} onClick={onReady}>
+            {busy === "ready" ? "Marking…" : "Mark as ready"}
+          </Button>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              disabled={busy !== null || detail.mergeability === "conflicting"}
+              onClick={() => onMerge(method)}
+            >
+              {busy === "merge" ? "Merging…" : "Merge pull request"}
+            </Button>
+            <select
+              aria-label="Merge method"
+              value={method}
+              disabled={busy !== null}
+              onChange={(event) => setMethod(event.currentTarget.value as typeof method)}
+              className="h-8 rounded-md border border-border bg-transparent px-2 text-xs text-muted-foreground"
+            >
+              <option value="squash">Squash and merge</option>
+              <option value="merge">Create a merge commit</option>
+              <option value="rebase">Rebase and merge</option>
+            </select>
+          </>
+        )}
+        <span className="flex-1" />
+        <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => onState("close")}>
+          {busy === "close" ? "Closing…" : "Close"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function Commits({ url }: { url: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const now = useNow();
+  const [commits, setCommits] = useState<PullRequestCommit[] | null>(null);
+  const [error, setError] = useState<PullRequestError | null>(null);
+  useEffect(() => {
+    let live = true;
+    void rpc.call("pr_commits", { url, refresh: false }).then((result) => {
+      if (!live) return;
+      if (result.ok) setCommits(result.value);
+      else setError(result.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [rpc, url]);
+  if (error !== null) return <EmptyState icon="Info" title="Couldn’t load commits" body={ERROR_COPY[error][1]} />;
+  if (commits === null) return <div aria-busy className="h-40 animate-pulse rounded-lg border border-border" />;
+  if (commits.length === 0) return <EmptyState icon="GitBranch" title="No commits" body="This pull request has no commits." />;
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      {[...commits].reverse().map((commit) => (
+        <button
+          key={commit.oid}
+          type="button"
+          onClick={() => navigate.openUrl(`${url}/commits/${commit.oid}`)}
+          className="flex w-full items-center gap-3 border-b border-border px-4 py-2 text-left text-[13px] last:border-b-0 hover:bg-state-hover"
+        >
+          <Icon name="Circle" className="size-3 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate" title={commit.headline}>
+            {commit.headline}
+          </span>
+          {commit.author ? <span className="shrink-0 text-xs text-muted-foreground">{commit.author}</span> : null}
+          <code className="shrink-0 font-mono text-[11px] text-muted-foreground">{commit.oid.slice(0, 7)}</code>
+          {commit.committedAt ? (
+            <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{shortAge(commit.committedAt, now)}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ReviewsSummary({ detail }: { detail: PullRequestDetail }) {
+  const latest = new Map<string, string>();
+  for (const review of detail.reviews) {
+    if (review.state && review.state !== "COMMENTED" && review.state !== "PENDING") latest.set(review.author, review.state);
+  }
+  const approved = [...latest.values()].filter((state) => state === "APPROVED").length;
+  const changes = [...latest.values()].filter((state) => state === "CHANGES_REQUESTED").length;
+  const unresolved = (detail.reviewThreads ?? []).filter((thread) => !thread.isResolved).length;
+  const items: { label: string; tone: Tone; icon: IconName }[] = [];
+  if (approved > 0) items.push({ label: `${approved} Approved`, tone: "positive", icon: "Check" });
+  if (changes > 0) items.push({ label: `${changes} Changes requested`, tone: "warning", icon: "AlertTriangle" });
+  if (detail.reviewDecision === "reviewRequired") items.push({ label: "Pending Reviews", tone: "neutral", icon: "Clock" });
+  if (unresolved > 0) items.push({ label: `${unresolved} Unresolved ${unresolved === 1 ? "Comment" : "Comments"}`, tone: "warning", icon: "MessageSquare" });
+  if (items.length === 0) items.push({ label: "No reviews yet", tone: "neutral", icon: "MessageSquare" });
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span key={item.label} className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs", TONE_BG[item.tone])}>
+          <Icon name={item.icon} className={cn("size-3.5", TONE_TEXT[item.tone])} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Checks({ detail }: { detail: PullRequestDetail }) {
+  const verdict = checksVerdict(detail);
+  const assessment = assess(factsFromDetail(detail));
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-[13px]">
+        <Icon name={verdict?.icon ?? "Circle"} className={cn("size-4", TONE_TEXT[verdict?.tone ?? "neutral"])} />
+        <span className="font-medium">{verdict?.label ?? (assessment.ci.state === "noChecks" ? "No checks reported" : "Checks unavailable")}</span>
+        <span className="flex-1" />
+        {validHeadOid(detail.headRefOid) ? <code className="font-mono text-[11px] text-muted-foreground">{detail.headRefOid.slice(0, 7)}</code> : null}
+      </div>
+      {detail.checks.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+          {assessment.ci.state === "unknown" ? "CI metadata is unavailable. Refresh to try again." : "No checks reported for this commit."}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="divide-y divide-border">
+            {[...detail.checks]
+              .sort((a, b) => checkRank(a) - checkRank(b))
+              .map((check, index) => (
+                <CheckRow key={`${check.name || check.context}-${index}`} check={check} />
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DetailPage({
   owner,
   name,
@@ -167,23 +445,23 @@ export function DetailPage({
   number: number;
   stars: string[];
   onToggleStar: (url: string) => void;
-  /** "panel" is the side-panel tab: tighter padding, no back link. */
   layout?: "page" | "panel";
-  /** The thread whose side panel shows this; enables Subscribe. */
   threadId?: string;
 }) {
   const url = `https://github.com/${owner}/${name}/pull/${number}`;
   const inPanel = layout === "panel";
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
+  const composer = useComposer();
   const now = useNow();
-  const [tab, setTab] = useState<Tab>("summary");
+  const [tab, setTab] = useState<Tab>("description");
   const [detail, setDetail] = useState<PullRequestDetail | null>(null);
   const [error, setError] = useState<PullRequestError | null>(null);
   const [loading, setLoading] = useState(false);
   const [diff, setDiff] = useState<DiffFile[] | null>(null);
   const [diffError, setDiffError] = useState<PullRequestError | null>(null);
   const [choices, setChoices] = useState<RepositoryChoice[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
   const generation = useRef(0);
 
   const load = useCallback(
@@ -216,7 +494,7 @@ export function DetailPage({
     void load(false);
   }, [load]);
   useEffect(() => {
-    if (tab === "code" && diff === null && diffError === null) void loadDiff(false);
+    if (tab === "changes" && diff === null && diffError === null) void loadDiff(false);
   }, [tab, diff, diffError, loadDiff]);
   useEffect(() => {
     void rpc.call("repositories").then((r) => setChoices(r.choices));
@@ -224,7 +502,7 @@ export function DetailPage({
 
   const refresh = () => {
     void load(true);
-    if (diff !== null || tab === "code") {
+    if (diff !== null || tab === "changes") {
       setDiff(null);
       void loadDiff(true);
     }
@@ -233,26 +511,32 @@ export function DetailPage({
   const project = choices.find((c) => c.projectId !== "" && c.repository.toLowerCase() === `${owner}/${name}`.toLowerCase());
   const startHandoff = (kind: (typeof HANDOFFS)[number]["kind"]) => {
     if (!detail) return;
-    navigate.toCompose({
-      projectId: project?.projectId,
-      initialPrompt: handoffPrompt(kind, detail),
-      focusPrompt: true,
-    });
+    navigate.toCompose({ projectId: project?.projectId, initialPrompt: handoffPrompt(kind, detail), focusPrompt: true });
   };
 
-  const activityCount = detail
-    ? detail.comments.length + detail.reviews.length + (detail.reviewThreads?.length ?? 0)
-    : undefined;
+  const mutate = async (key: string, call: () => Promise<{ ok: boolean; error?: PullRequestError }>, done: string) => {
+    setBusy(key);
+    const result = await call();
+    setBusy(null);
+    if (result.ok) {
+      toast(done);
+      void load(true);
+      return true;
+    }
+    toast.error(ERROR_COPY[result.error ?? "network"][0], { description: ERROR_COPY[result.error ?? "network"][1] });
+    return false;
+  };
+
+  const copyUrl = () =>
+    void experimental_copyToClipboard({ text: url }).then((ok) => (ok ? toast("Copied PR URL") : toast.error("Couldn’t copy the link")));
+
+  const reviewCount = detail ? detail.reviews.length + (detail.reviewThreads?.length ?? 0) + detail.comments.length : undefined;
+  const verdict = detail ? checksVerdict(detail) : null;
+  const state = detail ? (detail.isDraft ? "DRAFT" : detail.state) : null;
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
-      <div
-        className={cn(
-          "mx-auto box-border w-full",
-          inPanel ? "px-3 pb-6 pt-2" : "max-w-[860px] px-4 pb-10 pt-4 md:px-10",
-        )}
-      >
-        {/* Toolbar */}
+      <div className={cn("mx-auto box-border w-full", inPanel ? "px-3 pb-6 pt-2" : "max-w-[860px] px-4 pb-10 pt-4 md:px-10")}>
         <div className="flex items-center gap-1">
           {inPanel ? (
             <Button
@@ -260,9 +544,7 @@ export function DetailPage({
               size="icon"
               className="size-8 text-muted-foreground"
               aria-label="Open as page"
-              onClick={() =>
-                navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })
-              }
+              onClick={() => navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })}
             >
               <Icon name="Maximize2" className="size-4" />
             </Button>
@@ -278,37 +560,21 @@ export function DetailPage({
             </Button>
           )}
           <div className="flex-1" />
-          <StarButton starred={stars.includes(starKey(url))} onToggle={() => onToggleStar(url)} />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 text-muted-foreground"
-            aria-label="Refresh pull request"
-            disabled={loading}
-            onClick={refresh}
-          >
-            <Icon name="ArrowReloadHorizontal" className={cn("size-4", loading && "animate-spin")} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 text-muted-foreground"
-            aria-label="Copy link"
-            onClick={() =>
-              void experimental_copyToClipboard({ text: url }).then((ok) =>
-                ok ? toast("Link copied") : toast.error("Couldn’t copy the link"),
-              )
-            }
-          >
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Copy PR URL" onClick={copyUrl}>
             <Icon name="Link" className="size-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 text-muted-foreground"
-            aria-label="Open on GitHub"
-            onClick={() => navigate.openUrl(url)}
-          >
+          {threadId ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground"
+              aria-label="Add to Chat"
+              onClick={() => composer.insert(`${url} `, { at: "end" })}
+            >
+              <Icon name="Plus" className="size-4" />
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Open on GitHub" onClick={() => navigate.openUrl(url)}>
             <Icon name="ExternalLink" className="size-4" />
           </Button>
           {threadId ? <SubscribeButton threadId={threadId} url={url} /> : null}
@@ -337,44 +603,73 @@ export function DetailPage({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="More">
+                <Icon name="MoreHorizontal" className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onToggleStar(url)}>
+                <Icon name="Star" className="size-3.5" />
+                {stars.includes(starKey(url)) ? "Unstar" : "Star"}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={loading} onSelect={refresh}>
+                <Icon name="ArrowReloadHorizontal" className="size-3.5" />
+                Refresh
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
-        {/* Header */}
-        <div className="mt-4 px-2">
-          <h1 className={cn("font-medium", inPanel ? "text-base leading-[22px]" : "text-xl leading-[26px]")}>{detail?.title ?? `Pull request #${number}`}</h1>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <div className="mt-3">
+          {state ? (
+            <div className="px-2">
+              <StatusChip raw={state} />
+            </div>
+          ) : null}
+          <div className="mt-2">
             {detail ? (
-              <span className="flex items-center gap-2">
-                <Avatar login={detail.author} size={20} />
+              <TitleEditor
+                title={detail.title}
+                onRename={(title) => mutate("rename", () => rpc.call("pr_rename", { url, title }), "Renamed")}
+              />
+            ) : (
+              <h1 className="px-2 text-[17px] font-medium">Pull request #{number}</h1>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
+            {detail ? (
+              <span className="flex items-center gap-1.5">
+                <Avatar login={detail.author} size={18} />
                 {detail.author || "Deleted account"}
+              </span>
+            ) : null}
+            {detail ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <code className="truncate font-mono">{detail.headRefName}</code>
+                <Icon name="ArrowRight" className="size-3" />
+                <code className="truncate font-mono">{detail.baseRefName}</code>
               </span>
             ) : null}
             <span className="flex items-center gap-1.5">
               <RepoIcon icon={project?.icon} />
-              {owner}/{name}
+              {owner}/{name}#{number}
             </span>
-            <span className="flex items-center gap-1.5">
-              <Icon name="GitPullRequest" className="size-3.5" />
-              {number}
-            </span>
-            {detail ? (
-              <span className="flex items-center gap-1.5">
-                <Icon name="Clock" className="size-3.5" />
-                Loaded {relativeTime(detail.fetchedAt, now)}
-              </span>
-            ) : null}
+            {detail ? <DiffStats additions={detail.additions} deletions={detail.deletions} /> : null}
           </div>
         </div>
 
         <div className="mt-5">
-          <Segmented
-            label="Pull request sections"
+          <UnderlineTabs
             value={tab}
             onChange={setTab}
             options={[
-              { value: "summary", label: "Summary", icon: "FileText" },
-              { value: "code", label: "Code", icon: "Code", count: detail?.files.length },
-              { value: "activity", label: "Activity", icon: "MessageSquare", count: activityCount },
+              { value: "description", label: "Description" },
+              { value: "changes", label: "Changes", count: detail?.files.length },
+              { value: "commits", label: "Commits" },
+              { value: "reviews", label: "Reviews", count: reviewCount },
+              { value: "checks", label: "Checks", icon: verdict?.icon, tone: verdict?.tone },
             ]}
           />
         </div>
@@ -387,114 +682,42 @@ export function DetailPage({
             </EmptyState>
           ) : detail === null ? (
             <div aria-busy className="space-y-3">
-              <div className="h-40 animate-pulse rounded-xl border border-border bg-surface-raised" />
-              <div className="h-24 animate-pulse rounded-xl border border-border bg-surface-raised" />
+              <div className="h-40 animate-pulse rounded-lg border border-border" />
+              <div className="h-24 animate-pulse rounded-lg border border-border" />
             </div>
-          ) : tab === "summary" ? (
-            <Summary detail={detail} />
-          ) : tab === "code" ? (
+          ) : tab === "description" ? (
+            <div className="space-y-4">
+              <div className="px-2 text-sm">
+                {detail.body.trim() === "" ? <span className="text-muted-foreground">No description provided.</span> : <Markdown content={detail.body} />}
+              </div>
+              <MergeBox
+                detail={detail}
+                busy={busy}
+                onReady={() => void mutate("ready", () => rpc.call("pr_ready", { url }), "Marked as ready")}
+                onMerge={(method) => {
+                  if (!window.confirm(`Merge #${number} into ${detail.baseRefName}? This happens on GitHub right away.`)) return;
+                  void mutate("merge", () => rpc.call("pr_merge", { url, method }), "Merged");
+                }}
+                onState={(next) => {
+                  if (next === "close" && !window.confirm(`Close #${number} without merging?`)) return;
+                  void mutate(next, () => rpc.call("pr_set_state", { url, state: next }), next === "close" ? "Closed" : "Reopened");
+                }}
+              />
+            </div>
+          ) : tab === "changes" ? (
             <Code detail={detail} diff={diff} error={diffError} onRetry={() => void loadDiff(true)} />
+          ) : tab === "commits" ? (
+            <Commits url={url} />
+          ) : tab === "reviews" ? (
+            <div className="space-y-3">
+              <ReviewsSummary detail={detail} />
+              <Activity detail={detail} now={now} onPosted={() => void load(true)} />
+            </div>
           ) : (
-            <Activity detail={detail} now={now} onPosted={() => void load(true)} />
+            <Checks detail={detail} />
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function Summary({ detail }: { detail: PullRequestDetail }) {
-  const assessment = assess(factsFromDetail(detail));
-  const ci = ciRaw(detail);
-  return (
-    <div className="space-y-3">
-      <Card>
-        <div className="divide-y divide-border">
-          <Field label="Status">
-            <StatusChip raw={detail.isDraft ? "DRAFT" : detail.state} />
-          </Field>
-          <Field label="Review">
-            {detail.reviewDecision === "unknown" ? (
-              <span className="text-muted-foreground">No review decision</span>
-            ) : (
-              <StatusChip raw={REVIEW_RAW[detail.reviewDecision]} />
-            )}
-          </Field>
-          <Field label="Branch">
-            <code className="truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{detail.headRefName}</code>
-            <Icon name="ArrowRight" className="size-3 text-muted-foreground" />
-            <code className="truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{detail.baseRefName}</code>
-          </Field>
-          <Field label="Changes">
-            <DiffStats additions={detail.additions} deletions={detail.deletions} />
-            <span className="text-xs text-muted-foreground">
-              {detail.files.length} file{detail.files.length === 1 ? "" : "s"}
-            </span>
-          </Field>
-        </div>
-      </Card>
-
-      <Card
-        title="Checks"
-        trailing={ci ? <StatusChip raw={ci} /> : <span className="text-xs text-muted-foreground">{assessment.ci.state === "noChecks" ? "No checks reported" : "CI unavailable"}</span>}
-      >
-        {detail.checks.length === 0 ? (
-          <div className="px-4 py-3 text-xs text-muted-foreground">
-            {assessment.ci.state === "unknown"
-              ? "CI metadata is unavailable. Refresh to try again."
-              : assessment.ci.state === "noChecks"
-                ? "No checks reported."
-                : "Check details are unavailable. Open this pull request on GitHub."}
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {[...detail.checks]
-              .sort((a, b) => checkRank(a) - checkRank(b))
-              .map((check, index) => (
-                <CheckRow key={`${check.name || check.context}-${index}`} check={check} />
-              ))}
-          </div>
-        )}
-      </Card>
-
-      <Card title="Current assessment">
-        <div className="space-y-2 px-4 py-3 text-[13px]">
-          <div className="flex flex-wrap gap-2">
-            {assessment.blockers.length === 0 ? (
-              <span className="text-muted-foreground">
-                {assessment.missing.length === 0 ? "No blockers reported" : "Assessment incomplete"}
-              </span>
-            ) : (
-              assessment.blockers.map((b) => (
-                <span key={b} className="rounded-md bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] px-2 py-0.5 text-xs text-[var(--destructive-text)]">
-                  {BLOCKER_LABEL[b]}
-                </span>
-              ))
-            )}
-          </div>
-          {assessment.actions[0] ? (
-            <div className="text-xs text-muted-foreground">Next: {ACTION_LABEL[assessment.actions[0]]}</div>
-          ) : null}
-          {assessment.missing.length > 0 ? (
-            <div className="text-xs text-muted-foreground">
-              {assessment.missing.map((m) => MISSING_LABEL[m]).join(" · ")}
-            </div>
-          ) : null}
-          <div className="font-mono text-[11px] text-muted-foreground">
-            {validHeadOid(detail.headRefOid) ? `Commit ${detail.headRefOid.slice(0, 7)}` : "Commit unavailable"}
-          </div>
-        </div>
-      </Card>
-
-      <Card title="Description">
-        <div className="px-4 py-3 text-sm">
-          {detail.body.trim() === "" ? (
-            <span className="text-muted-foreground">No description provided.</span>
-          ) : (
-            <Markdown content={detail.body} />
-          )}
-        </div>
-      </Card>
     </div>
   );
 }
