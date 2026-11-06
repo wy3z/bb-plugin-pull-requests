@@ -46,9 +46,9 @@ html.dark .bb-pr-pi-rose { --bb-pr-pi-fg: oklch(71.2% 0.194 13.428); }
    depends on nothing outside its own `bb-pr-` classes. The host's pill-row,
    popover and selection tokens are still the source of truth. */
 .bb-pr-chips {
-  --bb-pr-pill-surface: color-mix(in oklab, var(--background) 60%, transparent);
-  --bb-pr-pill-surface-hover: var(--surface-selected, var(--state-hover));
-  --bb-pr-pill-outline: var(--border);
+  --bb-pr-pill-surface: var(--bbs-glass-surface);
+  --bb-pr-pill-surface-hover: var(--bbs-glass-surface-hover);
+  --bb-pr-pill-outline: var(--bbs-glass-outline);
   position: relative;
   min-width: 0;
   max-width: 100%;
@@ -475,4 +475,9 @@ section[aria-label="Thread context before sending"]:has(.bb-pr-chips [aria-expan
 }
 @media (prefers-reduced-motion: reduce) {
   .bb-pr-tray__action:active { transform: none; }
+}
+
+.bb-pr-chips__pill {
+  -webkit-backdrop-filter: var(--bbs-glass-blur);
+  backdrop-filter: var(--bbs-glass-blur);
 }
