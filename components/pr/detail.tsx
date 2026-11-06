@@ -100,51 +100,6 @@ function StatusChip({ raw }: { raw: string }) {
   );
 }
 
-const REVIEW_RAW: Record<PullRequestDetail["reviewDecision"], string> = {
-  approved: "APPROVED",
-  changesRequested: "CHANGES_REQUESTED",
-  reviewRequired: "REVIEW_REQUIRED",
-  unknown: "",
-};
-
-function ciRaw(detail: PullRequestDetail): string | null {
-  switch (assess(factsFromDetail(detail)).ci.state) {
-    case "failed":
-      return "FAILURE";
-    case "pending":
-      return "PENDING";
-    case "passed":
-      return "SUCCESS";
-    case "skipped":
-      return "SKIPPED";
-    default:
-      return null;
-  }
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-11 items-center gap-4 px-4 py-2">
-      <div className="w-24 shrink-0 text-xs text-muted-foreground">{label}</div>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-[13px]">{children}</div>
-    </div>
-  );
-}
-
-function Card({ title, trailing, children }: { title?: string; trailing?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface-raised">
-      {title ? (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 text-[13px] font-medium">
-          <span className="flex-1">{title}</span>
-          {trailing}
-        </div>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
 type Tab = "description" | "changes" | "commits" | "reviews" | "checks";
 
 type ChecksVerdict = { label: string; icon: IconName; tone: Tone };
@@ -776,7 +731,7 @@ function Code({
     );
   }
   if (diff === null) {
-    return <div aria-busy className="h-64 animate-pulse rounded-xl border border-border bg-surface-raised" />;
+    return <div aria-busy className="h-64 animate-pulse rounded-lg border border-border" />;
   }
   if (diff.length === 0) {
     return <EmptyState icon="Code" title="No changes" body="This pull request has no file changes." />;
@@ -809,7 +764,7 @@ function Code({
         const isClosed = closed.includes(file.path);
         const stat = stats.get(file.path);
         return (
-          <section key={file.path} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
+          <section key={file.path} className="overflow-hidden rounded-lg border border-border">
             <button
               type="button"
               aria-expanded={!isClosed}
@@ -883,13 +838,13 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
   return (
     <div className="space-y-3">
       {entries.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           {detail.reviewThreads !== null ? "No activity yet" : "No conversation yet"}
         </div>
       ) : (
         entries.map((entry) =>
           entry.kind === "thread" ? (
-            <section key={entry.thread.id} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
+            <section key={entry.thread.id} className="overflow-hidden rounded-lg border border-border">
               <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs">
                 <Icon name="FileDiff" className="size-3.5 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate font-mono">
@@ -921,14 +876,14 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
               </div>
             </section>
           ) : (
-            <section key={entry.comment.id || entry.at} className="overflow-hidden rounded-xl border border-border bg-surface-raised">
+            <section key={entry.comment.id || entry.at} className="overflow-hidden rounded-lg border border-border">
               <CommentBody comment={entry.comment} now={now} review={entry.kind === "review"} />
             </section>
           ),
         )
       )}
 
-      <section className="rounded-xl border border-border bg-surface-raised p-3">
+      <section className="rounded-lg border border-border p-3">
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

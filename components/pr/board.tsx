@@ -474,7 +474,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                       <span className="text-[11px]">{groupItems.length}</span>
                     </button>
                     {closed ? null : (
-                      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-raised">
+                      <div className="flex flex-col gap-px">
                         {groupItems.map((item) => (
                           <Row
                             key={item.url}
@@ -511,11 +511,11 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
 
 function Skeleton() {
   return (
-    <div aria-busy className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-raised">
+    <div aria-busy className="flex flex-col gap-px">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="flex min-h-16 flex-col justify-center gap-2 px-4 py-3">
+        <div key={i} className="flex min-h-9 items-center gap-2.5 px-3">
+          <div className="size-3.5 animate-pulse rounded-full bg-muted" />
           <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-          <div className="ml-[22px] h-2.5 w-1/3 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>

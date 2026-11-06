@@ -133,7 +133,7 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="flex h-8 w-fit shrink-0 items-center rounded-lg bg-surface-recessed p-0.5">
+    <div role="tablist" aria-label={label} className="flex h-8 w-fit shrink-0 items-center gap-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -142,10 +142,10 @@ export function Segmented<T extends string>({
           aria-selected={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-3 text-xs transition-colors",
+            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors",
             value === option.value
-              ? "bg-surface-raised font-medium text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-state-active text-foreground"
+              : "text-muted-foreground hover:bg-state-hover hover:text-foreground",
           )}
         >
           {option.icon ? <Icon name={option.icon} className="size-3.5" /> : null}
@@ -177,10 +177,10 @@ export function Chip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors",
+        "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors",
         active
-          ? "border-border bg-state-active text-foreground"
-          : "border-transparent bg-surface-recessed text-muted-foreground hover:text-foreground",
+          ? "bg-state-active text-foreground"
+          : "text-muted-foreground hover:bg-state-hover hover:text-foreground",
       )}
     >
       <Icon name={icon} className="size-3.5" />
