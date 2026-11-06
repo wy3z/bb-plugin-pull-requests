@@ -20,6 +20,7 @@ import {
   type ExperimentalThreadContextSegmentProps,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
 import { isDone, lifecycle, TRAY_STATUS, trayStatus, type Lifecycle } from "@/lib/status";
 import type { PullRequestSummary, rpcContract } from "../../server";
@@ -61,6 +62,22 @@ export function useLinkedPullRequests(threadId: string) {
     [rpc, threadId, load],
   );
   return { urls: urls ?? [], loaded: urls !== null, unlink };
+}
+
+type PrAction = "fix-conflicts" | "debug-ci" | "update-branch";
+
+const PR_ACTION_LABEL: Record<PrAction, string> = {
+  "fix-conflicts": "Fix conflicts",
+  "debug-ci": "Debug CI",
+  "update-branch": "Update branch",
+};
+
+function prActionFor(summary: PullRequestSummary): PrAction | null {
+  if (isDone(summary)) return null;
+  if (summary.mergeability === "conflicting") return "fix-conflicts";
+  if (summary.ci.state === "failed") return "debug-ci";
+  if (summary.behind) return "update-branch";
+  return null;
 }
 
 const SUMMARY_BATCH = 20;
@@ -282,6 +299,7 @@ interface TrackItem {
   branch: boolean;
   linked: boolean;
   from: string | null;
+  fromThreadId: string | null;
 }
 
 function useTrackItems(threadId: string, environmentId: string | null) {
@@ -307,15 +325,15 @@ function useTrackItems(threadId: string, environmentId: string | null) {
     };
     const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
     const branch = environmentId ? branches.get(environmentId) : undefined;
-    if (branch) add(branch, { branch: true, linked: urls.some((u) => same(u, branch)), from: null });
-    for (const url of urls) add(url, { branch: false, linked: true, from: null });
-    for (const url of related.get(threadId)?.subscribed ?? []) add(url, { branch: false, linked: false, from: null });
+    if (branch) add(branch, { branch: true, linked: urls.some((u) => same(u, branch)), from: null, fromThreadId: null });
+    for (const url of urls) add(url, { branch: false, linked: true, from: null, fromThreadId: null });
+    for (const url of related.get(threadId)?.subscribed ?? []) add(url, { branch: false, linked: false, from: null, fromThreadId: null });
     for (const child of children) {
       const childBranch = child.environmentId ? branches.get(child.environmentId) : undefined;
-      if (childBranch) add(childBranch, { branch: false, linked: false, from: child.title });
+      if (childBranch) add(childBranch, { branch: false, linked: false, from: child.title, fromThreadId: child.id });
       const childRelated = related.get(child.id);
       for (const url of [...(childRelated?.linked ?? []), ...(childRelated?.subscribed ?? [])]) {
-        add(url, { branch: false, linked: false, from: child.title });
+        add(url, { branch: false, linked: false, from: child.title, fromThreadId: child.id });
       }
     }
     return list;
@@ -351,6 +369,7 @@ function TrayRow({
   from,
   onOpen,
   onAddToChat,
+  onAction,
 }: {
   url: string;
   summary: PullRequestSummary | undefined;
@@ -358,7 +377,9 @@ function TrayRow({
   from: string | null;
   onOpen: (url: string) => void;
   onAddToChat: (url: string) => void;
+  onAction: (url: string, action: PrAction) => void;
 }) {
+  const action = summary ? prActionFor(summary) : null;
   const { owner, name, number } = prTabParams(url);
   const status = summary ? TRAY_STATUS[trayStatus(summary)] : null;
   const title = summary?.title ?? `${owner}/${name}`;
@@ -394,6 +415,19 @@ function TrayRow({
       <span className="bb-pr-tray__suffix">#{number}</span>
       <span className="bb-pr-tray__end">
         <span className="bb-pr-tray__actions">
+          {action ? (
+            <button
+              type="button"
+              className="bb-pr-tray__action"
+              title={from ? `${PR_ACTION_LABEL[action]}: brief ${from}` : `${PR_ACTION_LABEL[action]}: brief this thread`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAction(url, action);
+              }}
+            >
+              {PR_ACTION_LABEL[action]}
+            </button>
+          ) : null}
           <button
             type="button"
             className="bb-pr-tray__icon"
@@ -418,6 +452,7 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
   const { items } = useTrackItems(threadId, environment?.id ?? null);
   const summaries = useSummaries(items.map((item) => item.url));
   const openPullRequest = useOpenPullRequest();
+  const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const [open, setOpen] = useState(false);
   const [doneShown, setDoneShown] = useState(FIRST_PAGE);
@@ -466,6 +501,19 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
     setOpen(false);
     composer.insert(`${url} `, { at: "end" });
   };
+  const runAction = (url: string, action: PrAction, target: string) => {
+    setOpen(false);
+    rpc.call("pr_action", { threadId: target, url, action }).then(
+      (result) =>
+        toast.success(`${PR_ACTION_LABEL[action]} sent`, {
+          description: result.delivery === "queued" ? "Queued until the agent finishes its turn." : undefined,
+        }),
+      (error: unknown) =>
+        toast.error(`Couldn't send ${PR_ACTION_LABEL[action]}`, {
+          description: error instanceof Error ? error.message : String(error),
+        }),
+    );
+  };
   const renderRow = (row: (typeof rows)[number]) => (
     <TrayRow
       key={row.url}
@@ -475,6 +523,7 @@ export function LinkedPullRequestsSegment({ threadId, environment }: Experimenta
       from={row.from}
       onOpen={openOne}
       onAddToChat={addToChat}
+      onAction={(url, action) => runAction(url, action, row.fromThreadId ?? threadId)}
     />
   );
 

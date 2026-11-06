@@ -596,10 +596,11 @@ export interface PullRequestSummary {
   author: string | null;
   /** ISO timestamp, or null when GitHub left it out. */
   createdAt: string | null;
+  behind?: boolean;
 }
 
 const SUMMARY_FIELDS =
-  "number,title,url,state,isDraft,reviewDecision,mergeable,headRefOid,statusCheckRollup,author,createdAt";
+  "number,title,url,state,isDraft,reviewDecision,mergeable,mergeStateStatus,headRefOid,statusCheckRollup,author,createdAt";
 
 async function fetchSummary(rawUrl: string): Promise<PullRequestSummary> {
   const { url, owner, name, number } = validatedPullRequestUrl(rawUrl);
@@ -619,7 +620,32 @@ async function fetchSummary(rawUrl: string): Promise<PullRequestSummary> {
     mergeability: mergeability(value.mergeable),
     author: typeof value.author?.login === "string" ? value.author.login : null,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : null,
+    behind: value.mergeStateStatus === "BEHIND",
   };
+}
+
+function prActionPrompt(action: "fix-conflicts" | "debug-ci" | "update-branch", url: string, number: number): string {
+  const steps = {
+    "fix-conflicts": [
+      `Pull request #${number} (${url}) has merge conflicts with its base branch.`,
+      "In the checkout that owns its branch: fetch, merge or rebase the base branch, and resolve each conflict keeping the intent of both sides.",
+      "Run the project's checks, then push the branch.",
+      "Reply with the files you resolved and how, and the check results.",
+    ],
+    "debug-ci": [
+      `CI is failing on pull request #${number} (${url}).`,
+      `Find the failing jobs with \`gh pr checks ${number}\` and read their logs with \`gh run view <run-id> --log-failed\`.`,
+      "If the failure is in the code or tests, fix the cause, reproduce the check locally, and push.",
+      "If it is infrastructure (billing, runners, secrets, flaky network), change nothing and say so.",
+      "Reply with the cause, what you changed, and the local result.",
+    ],
+    "update-branch": [
+      `Pull request #${number} (${url}) is behind its base branch.`,
+      "In the checkout that owns its branch: fetch and merge the base branch (or rebase if the project prefers), run the project's checks, and push.",
+      "Reply with anything that conflicted and the check results.",
+    ],
+  } as const;
+  return steps[action].join("\n\n");
 }
 
 /** Canonical https://github.com/<owner>/<repo>/pull/<n>, or null. */
@@ -759,6 +785,14 @@ export const rpcContract = defineRpcContract({
   summaries: {
     input: z.object({ urls: z.array(urlSchema).max(20), refresh: z.boolean() }),
     output: z.custom<{ items: { url: string; summary: Result<PullRequestSummary> }[] }>(),
+  },
+  pr_action: {
+    input: z.object({
+      threadId: z.string().min(1).max(100),
+      url: urlSchema,
+      action: z.enum(["fix-conflicts", "debug-ci", "update-branch"]),
+    }),
+    output: z.custom<{ delivery: string }>(),
   },
   linked_list: {
     input: z.object({ threadId: z.string().min(1).max(100) }),
@@ -931,6 +965,15 @@ export default async function plugin(bb: BbPluginApi) {
         }),
       );
       return { items: urls.map((url, index) => ({ url, summary: outcomes[index] })) };
+    },
+    pr_action: async ({ threadId, url, action }) => {
+      const pr = validatedPullRequestUrl(url);
+      const sent = await bb.sdk.threads.send({
+        threadId,
+        mode: "queue-if-active",
+        input: [{ type: "text" as const, text: prActionPrompt(action, pr.url, pr.number), mentions: [] }],
+      });
+      return { delivery: sent.delivery };
     },
     linked_list: async ({ threadId }) => ({ urls: await readLinks(threadId) }),
     link: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "link") }),
