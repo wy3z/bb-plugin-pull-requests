@@ -522,9 +522,9 @@ function Skeleton() {
 
 function glyphColor(item: PullRequestListItem): string {
   if (item.isDraft) return "text-muted-foreground";
-  if (item.mergeability === "conflicting") return "text-red-600 dark:text-red-500";
-  if (item.reviewDecision === "changesRequested") return "text-amber-600 dark:text-amber-500";
-  return "text-green-600 dark:text-green-500";
+  if (item.mergeability === "conflicting") return "text-[var(--destructive-text)]";
+  if (item.reviewDecision === "changesRequested") return "text-[var(--attention)]";
+  return "text-[var(--success)]";
 }
 
 function Row({
@@ -548,15 +548,15 @@ function Row({
   const status = rowStatus(item);
   const statusTone =
     item.mergeability === "conflicting"
-      ? "text-red-600/80 dark:text-red-400/80"
+      ? "text-[color-mix(in_oklab,var(--destructive-text)_80%,transparent)]"
       : item.reviewDecision === "changesRequested"
-        ? "text-amber-600 dark:text-amber-500"
+        ? "text-[var(--attention)]"
         : "text-muted-foreground";
   const ciTone =
     item.ci.state === "failed"
-      ? "text-red-600/80 dark:text-red-400/80"
+      ? "text-[color-mix(in_oklab,var(--destructive-text)_80%,transparent)]"
       : item.ci.state === "passed"
-        ? "text-green-600/80 dark:text-green-400/80"
+        ? "text-[color-mix(in_oklab,var(--success)_80%,transparent)]"
         : "text-muted-foreground";
   const ciLabel = item.headRefOid
     ? `${CI_LABEL[item.ci.state]} · ${item.headRefOid.slice(0, 7)}`
@@ -639,7 +639,7 @@ export function StarButton({ starred, onToggle }: { starred: boolean; onToggle: 
     >
       <Icon
         name="Star"
-        className={cn("size-3.5", starred ? "fill-amber-500 text-amber-500" : "text-muted-foreground")}
+        className={cn("size-3.5", starred ? "fill-[var(--attention)] text-[var(--attention)]" : "text-muted-foreground")}
       />
     </button>
   );

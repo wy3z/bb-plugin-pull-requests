@@ -49,17 +49,17 @@ type Tone = "neutral" | "positive" | "warning" | "negative" | "merged";
 
 const TONE_TEXT: Record<Tone, string> = {
   neutral: "text-muted-foreground",
-  positive: "text-green-600 dark:text-green-500",
-  warning: "text-amber-600 dark:text-amber-500",
-  negative: "text-red-600 dark:text-red-500",
-  merged: "text-purple-600 dark:text-purple-400",
+  positive: "text-[var(--success)]",
+  warning: "text-[var(--attention)]",
+  negative: "text-[var(--destructive-text)]",
+  merged: "text-[var(--color-purple-400)]",
 };
 const TONE_BG: Record<Tone, string> = {
   neutral: "bg-muted-foreground/10",
-  positive: "bg-green-500/10",
-  warning: "bg-amber-500/10",
-  negative: "bg-red-500/10",
-  merged: "bg-purple-500/10",
+  positive: "bg-[color-mix(in_oklab,var(--success)_10%,transparent)]",
+  warning: "bg-[color-mix(in_oklab,var(--attention)_10%,transparent)]",
+  negative: "bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
+  merged: "bg-[color-mix(in_oklab,var(--color-purple-400)_10%,transparent)]",
 };
 
 function statusStyle(raw: string): { label: string; icon: IconName; tone: Tone } {
@@ -466,7 +466,7 @@ function Summary({ detail }: { detail: PullRequestDetail }) {
               </span>
             ) : (
               assessment.blockers.map((b) => (
-                <span key={b} className="rounded-md bg-red-500/10 px-2 py-0.5 text-xs text-red-600 dark:text-red-400">
+                <span key={b} className="rounded-md bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] px-2 py-0.5 text-xs text-[var(--destructive-text)]">
                   {BLOCKER_LABEL[b]}
                 </span>
               ))
@@ -680,7 +680,7 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
                     "rounded px-1.5 py-0.5 text-[10px]",
                     entry.thread.isResolved
                       ? "bg-muted-foreground/10 text-muted-foreground"
-                      : "bg-amber-500/10 text-amber-600 dark:text-amber-500",
+                      : "bg-[color-mix(in_oklab,var(--attention)_10%,transparent)] text-[var(--attention)]",
                   )}
                 >
                   {entry.thread.isResolved ? "Resolved" : "Unresolved"}

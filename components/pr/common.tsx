@@ -47,8 +47,8 @@ export function DiffStats({ additions, deletions }: { additions: number; deletio
       title={`${additions} additions, ${deletions} deletions`}
       className="flex items-center gap-2 font-mono text-[11px]"
     >
-      <span className="text-green-600 dark:text-green-500">+{compactCount(additions)}</span>
-      <span className="text-red-600 dark:text-red-500">−{compactCount(deletions)}</span>
+      <span className="text-[var(--diff-added,var(--success))]">+{compactCount(additions)}</span>
+      <span className="text-[var(--diff-removed,var(--destructive-text))]">−{compactCount(deletions)}</span>
     </span>
   );
 }
@@ -61,7 +61,7 @@ export function NumberBadge({ number, draft }: { number: number; draft: boolean 
         "inline-flex h-4 shrink-0 items-center gap-[3px] rounded px-1 text-[10px] font-medium",
         draft
           ? "bg-muted-foreground/10 text-muted-foreground"
-          : "bg-green-500/10 text-green-600 dark:text-green-500",
+          : "bg-[color-mix(in_oklab,var(--success)_10%,transparent)] text-[var(--success)]",
       )}
     >
       <Icon name={draft ? "GitPullRequestDraft" : "GitPullRequest"} className="size-2.5" />
