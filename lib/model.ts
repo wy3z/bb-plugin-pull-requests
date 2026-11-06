@@ -1,3 +1,4 @@
+import { longAge } from "@wy3z/bb-suite/time";
 // Pull request model and assessment, ported from Zeron
 // (crates/proto/src/change_request_assessment.rs and entities.rs, MIT).
 // One assessment drives board rows, the detail page and agent handoffs.
@@ -412,21 +413,7 @@ export function starKey(url: string): string {
 }
 
 export function relativeTime(timestamp: string, now = Date.now()): string {
-  const seconds = Math.max(0, Math.floor((now - Date.parse(timestamp)) / 1000));
-  if (seconds < 60) return "just now";
-  const [amount, unit] =
-    seconds < 3_600
-      ? [Math.floor(seconds / 60), "minute"]
-      : seconds < 86_400
-        ? [Math.floor(seconds / 3_600), "hour"]
-        : seconds < 604_800
-          ? [Math.floor(seconds / 86_400), "day"]
-          : seconds < 2_592_000
-            ? [Math.floor(seconds / 604_800), "week"]
-            : seconds < 31_536_000
-              ? [Math.floor(seconds / 2_592_000), "month"]
-              : [Math.floor(seconds / 31_536_000), "year"];
-  return `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
+  return longAge(timestamp, now);
 }
 
 export function compactRelativeTime(timestamp: string, now = Date.now()): string {

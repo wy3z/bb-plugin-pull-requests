@@ -1,3 +1,4 @@
+import { shortAgo } from "@wy3z/bb-suite/time";
 // Subscriptions in the UI: a "Listening N" chip above the composer, after
 // Cursor's subscriptions pill, opening a tray of the pull requests this thread
 // follows; and the Subscribe button in the pull request viewer.
@@ -66,10 +67,7 @@ export function useSubscriptions(threadId: string | null) {
 }
 
 function ago(now: number, at: number): string {
-  const seconds = Math.max(0, Math.floor((now - at) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
+  return shortAgo(at, now);
 }
 
 /** The chip above the composer and its tray. */

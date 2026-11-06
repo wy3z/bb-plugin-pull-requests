@@ -210,11 +210,11 @@ section[aria-label="Thread context before sending"]:has(.bb-pr-chips [aria-expan
 }
 /* Tray status colours (lib/status.ts): BB's semantic tokens, with the
    GitHub/Cursor values as fallbacks. */
-.bb-pr-tray__leading[data-tone="green"] { color: var(--success, #3fb950); }
-.bb-pr-tray__leading[data-tone="red"] { color: var(--destructive-text, #f85149); }
-.bb-pr-tray__leading[data-tone="orange"] { color: var(--warning-text, #db6d28); }
-.bb-pr-tray__leading[data-tone="yellow"] { color: var(--attention, #d29922); }
-.bb-pr-tray__leading[data-tone="purple"] { color: var(--pr-merged, #a371f7); }
+.bb-pr-tray__leading[data-tone="green"] { color: var(--bbs-green); }
+.bb-pr-tray__leading[data-tone="red"] { color: var(--destructive-text, var(--bbs-red)); }
+.bb-pr-tray__leading[data-tone="orange"] { color: var(--warning-text, var(--bbs-orange)); }
+.bb-pr-tray__leading[data-tone="yellow"] { color: var(--bbs-amber); }
+.bb-pr-tray__leading[data-tone="purple"] { color: var(--pr-merged, var(--bbs-purple)); }
 .bb-pr-tray__leading[data-tone="tertiary"] { color: var(--subtle-foreground, var(--muted-foreground)); }
 .bb-pr-tray__label {
   flex: 0 1 auto;
@@ -355,10 +355,10 @@ section[aria-label="Thread context before sending"]:has(.bb-pr-chips [aria-expan
 }
 /* Lifecycle colours from BB's semantic tokens (the GitHub values are the
    fallbacks). */
-.bb-pr-link__icon[data-status="open"], .bb-pr-card__badge[data-status="open"] { --bb-pr-tone: var(--success, #3fb950); }
-.bb-pr-link__icon[data-status="draft"], .bb-pr-card__badge[data-status="draft"] { --bb-pr-tone: var(--muted-foreground, #8b949e); }
-.bb-pr-link__icon[data-status="merged"], .bb-pr-card__badge[data-status="merged"] { --bb-pr-tone: var(--pr-merged, #a371f7); }
-.bb-pr-link__icon[data-status="closed"], .bb-pr-card__badge[data-status="closed"] { --bb-pr-tone: var(--destructive-text, #f85149); }
+.bb-pr-link__icon[data-status="open"], .bb-pr-card__badge[data-status="open"] { --bb-pr-tone: var(--bbs-green); }
+.bb-pr-link__icon[data-status="draft"], .bb-pr-card__badge[data-status="draft"] { --bb-pr-tone: var(--muted-foreground, var(--bbs-grey)); }
+.bb-pr-link__icon[data-status="merged"], .bb-pr-card__badge[data-status="merged"] { --bb-pr-tone: var(--pr-merged, var(--bbs-purple)); }
+.bb-pr-link__icon[data-status="closed"], .bb-pr-card__badge[data-status="closed"] { --bb-pr-tone: var(--destructive-text, var(--bbs-red)); }
 .bb-pr-link__icon[data-status]:not([data-status="unknown"]) { color: var(--bb-pr-tone); }
 
 .bb-pr-card {
@@ -428,10 +428,10 @@ section[aria-label="Thread context before sending"]:has(.bb-pr-chips [aria-expan
    closed, draft), as Cursor's PR tabs do. The title ends in an invisible
    marker (LIFECYCLE_MARK in components/pr/pills.tsx), which only this plugin
    writes, so the rule cannot match another plugin's tabs. */
-[data-tab-pill]:has([title$="\2060\200B"]) [data-icon="GitPullRequest"] { color: var(--success, #3fb950); }
-[data-tab-pill]:has([title$="\2060\200C"]) [data-icon="GitPullRequest"] { color: var(--pr-merged, #a371f7); }
-[data-tab-pill]:has([title$="\2060\200D"]) [data-icon="GitPullRequest"] { color: var(--destructive-text, #f85149); }
-[data-tab-pill]:has([title$="\200C\2060"]) [data-icon="GitPullRequest"] { color: var(--muted-foreground, #8b949e); }
+[data-tab-pill]:has([title$="\2060\200B"]) [data-icon="GitPullRequest"] { color: var(--bbs-green); }
+[data-tab-pill]:has([title$="\2060\200C"]) [data-icon="GitPullRequest"] { color: var(--pr-merged, var(--bbs-purple)); }
+[data-tab-pill]:has([title$="\2060\200D"]) [data-icon="GitPullRequest"] { color: var(--destructive-text, var(--bbs-red)); }
+[data-tab-pill]:has([title$="\200C\2060"]) [data-icon="GitPullRequest"] { color: var(--muted-foreground, var(--bbs-grey)); }
 
 .bb-pr-tray {
   transform-origin: bottom left;

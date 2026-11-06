@@ -4,6 +4,7 @@
 // from a button in the sidebar footer. The footer API can't navigate on its
 // own, so the button is a disclosure whose component navigates to the page
 // and dismisses itself on mount.
+import "@wy3z/bb-suite/tokens.css";
 import "./app.css";
 import { useCallback, useEffect, useState } from "react";
 import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
