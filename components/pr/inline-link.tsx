@@ -304,13 +304,14 @@ export function PullRequestLinkDecorator() {
   useEffect(() => {
     const open = (event: Event) => {
       const pr = pullRequestHref(openPullRequestUrl((event as CustomEvent<unknown>).detail) ?? "");
+      if (!pr) return;
+      event.preventDefault();
       const source = event.target instanceof Element ? event.target : null;
       const threadId = source ? threadIdFor(source) : null;
-      if (!pr || threadId === null) return;
-      const opened = openInThreadPanel(threadId, pr.url, latest.current.summaries.get(pr.url), () =>
-        latest.current.navigate.openUrl(pr.url),
-      );
-      if (opened) event.preventDefault();
+      const [, owner, name] = PR_PATH_RE.exec(pr.url) ?? [];
+      const openPage = () =>
+        latest.current.navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${pr.number}` });
+      if (threadId === null || !openInThreadPanel(threadId, pr.url, latest.current.summaries.get(pr.url), openPage)) openPage();
     };
     window.addEventListener(OPEN_PULL_REQUEST_EVENT, open);
     return () => window.removeEventListener(OPEN_PULL_REQUEST_EVENT, open);

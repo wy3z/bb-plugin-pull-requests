@@ -67,10 +67,11 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
 - **From other plugins.** Dispatch a cancelable, bubbling
   `bb-pull-requests:open` `CustomEvent` with `detail: { url }` from the
   clicked element (see `components/pr/open-event.ts`). When the element sits
-  in a thread view, the pull request opens in that thread's side panel and the
-  event is cancelled; `dispatchEvent` returning `true` means this plugin is not
-  installed or there is no thread panel, so open the URL yourself. Projects
-  uses this for its PR chips.
+  in a thread view, the pull request opens in that thread's side panel;
+  elsewhere it opens in this plugin's full-page view. Either way the event is
+  cancelled, so `dispatchEvent` returning `true` means this plugin is not
+  installed and you should open the URL yourself. Projects uses this for its
+  PR chips.
 - **Agents** learn both from `skills/pull-requests/SKILL.md`.
 
 ## GitHub ownership and the old subscriptions
