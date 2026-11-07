@@ -10,13 +10,15 @@ import { useCallback, useEffect, useState } from "react";
 import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import {
   LinkedPullRequestsSegment,
+  openThreadPullRequestTab,
   THREAD_PR_TAB,
   useLinkedPullRequestsVisible,
   useLiveTabTitle,
+  useThreadPullRequestTabVisible,
 } from "@/components/pr/pills";
 import { starKey } from "@/lib/model";
 import type { rpcContract } from "./server";
-import { Board, parsePrTabParams, PR_TAB } from "@/components/pr/board";
+import { Board, openPagePullRequestTab, parsePrTabParams, PR_TAB, usePageTabVisible } from "@/components/pr/board";
 import { PullRequestDirective, PullRequestLinkDecorator } from "@/components/pr/inline-link";
 import { EmptyState } from "@/components/pr/common";
 import { DetailPage } from "@/components/pr/detail";
@@ -117,6 +119,8 @@ export default definePluginApp((app) => {
     title: "Pull request",
     icon: "GitPullRequest",
     layout: "flush",
+    useVisible: usePageTabVisible,
+    run: openPagePullRequestTab,
     component: ({ params }) => <PullRequestTab params={params} tab={PR_TAB} />,
   });
   // The same tab inside a thread, opened from a composer pill or a reply.
@@ -125,6 +129,8 @@ export default definePluginApp((app) => {
     title: "Pull request",
     icon: "GitPullRequest",
     layout: "flush",
+    useVisible: useThreadPullRequestTabVisible,
+    run: openThreadPullRequestTab,
     component: ({ params, threadId }) => <PullRequestTab params={params} tab={THREAD_PR_TAB} threadId={threadId} />,
   });
   app.slots.experimental_threadContextSegment({

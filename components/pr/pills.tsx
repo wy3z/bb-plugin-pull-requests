@@ -25,6 +25,7 @@ import { Icon } from "@/components/ui/icon";
 import { isDone, lifecycle, TRAY_STATUS, trayStatus, type Lifecycle } from "@/lib/status";
 import type { PullRequestSummary, rpcContract } from "../../server";
 import { prTabParams } from "./board";
+import { lastOpenedPullRequest, openRevealed, useRevealed } from "./tab-reveal";
 
 /** The side-panel tab for one pull request inside a thread. */
 export const THREAD_PR_TAB = {
@@ -122,25 +123,30 @@ export function useSummaries(urls: readonly string[]) {
 }
 
 /** Opens a pull request in the current surface's side panel. */
-export function useOpenPullRequest() {
+export function useOpenPullRequest(threadId: string) {
   const panel = experimental_useAppPanel();
   const navigate = useBbNavigate();
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
   return useCallback(
     (url: string, summary: PullRequestSummary | undefined) => {
       const params = prTabParams(url);
-      const opened = panel.openTab({
-        tab: THREAD_PR_TAB,
-        params: { ...params },
-        title: pullRequestTabTitle(params.number, summary, `${params.owner}/${params.name}`),
-      });
-      // No side panel here (a surface without one): use the full page.
-      if (!opened) {
-        navigate.toPluginPanel("pull-requests", {
-          subPath: `pr/${params.owner}/${params.name}/${params.number}`,
-        });
-      }
+      openRevealed(
+        threadRevealKey(threadId),
+        url,
+        () =>
+          panelRef.current.openTab({
+            tab: THREAD_PR_TAB,
+            params: { ...params },
+            title: pullRequestTabTitle(params.number, summary, `${params.owner}/${params.name}`),
+          }),
+        () =>
+          navigate.toPluginPanel("pull-requests", {
+            subPath: `pr/${params.owner}/${params.name}/${params.number}`,
+          }),
+      );
     },
-    [panel, navigate],
+    [threadId, navigate],
   );
 }
 
@@ -451,7 +457,7 @@ function TrayRow({
 export function LinkedPullRequestsSegment({ threadId, environment }: ExperimentalThreadContextSegmentProps) {
   const { items } = useTrackItems(threadId, environment?.id ?? null);
   const summaries = useSummaries(items.map((item) => item.url));
-  const openPullRequest = useOpenPullRequest();
+  const openPullRequest = useOpenPullRequest(threadId);
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const [open, setOpen] = useState(false);
@@ -592,6 +598,49 @@ export function useLinkedPullRequestsVisible({
   return useTrackItems(threadId, environment?.id ?? null).items.length > 0;
 }
 
+function threadRevealKey(threadId: string): string {
+  return `thread:${threadId}`;
+}
+
+const threadPrimary = new Map<string, string>();
+
+export function useThreadPullRequestTabVisible({
+  threadId,
+  environment,
+}: {
+  threadId: string;
+  environment: { id: string } | null;
+}): boolean {
+  const { items } = useTrackItems(threadId, environment?.id ?? null);
+  const primary = items[0]?.url;
+  useEffect(() => {
+    if (primary) threadPrimary.set(threadId, primary);
+    else threadPrimary.delete(threadId);
+  }, [threadId, primary]);
+  const revealed = useRevealed(threadRevealKey(threadId));
+  return items.length > 0 || revealed;
+}
+
+export function openThreadPullRequestTab({
+  threadId,
+  experimental_panel: panel,
+}: {
+  threadId: string;
+  experimental_panel: ReturnType<typeof experimental_useAppPanel>;
+}): void {
+  const url = threadPrimary.get(threadId) ?? lastOpenedPullRequest(threadRevealKey(threadId));
+  if (!url) {
+    panel.openTab({ tab: THREAD_PR_TAB });
+    return;
+  }
+  const params = prTabParams(url);
+  panel.openTab({
+    tab: THREAD_PR_TAB,
+    params: { ...params },
+    title: pullRequestTabTitle(params.number, undefined, `${params.owner}/${params.name}`),
+  });
+}
+
 // The link decorator renders as an app overlay, outside any thread view, so
 // its own panel hook has no side panel. Each thread view registers its panel
 // here (this hook runs in every thread's composer), keyed by thread.
@@ -608,15 +657,27 @@ function useRegisterThreadPanel(threadId: string) {
 }
 
 /** Opens a pull request in a thread's side panel; false when that thread isn't on screen. */
-export function openInThreadPanel(threadId: string | null, url: string, summary: PullRequestSummary | undefined): boolean {
-  const panel = threadId ? threadPanels.get(threadId) : threadPanels.size === 1 ? [...threadPanels.values()][0] : undefined;
-  if (!panel) return false;
+export function openInThreadPanel(
+  threadId: string | null,
+  url: string,
+  summary: PullRequestSummary | undefined,
+  onFail: () => void,
+): boolean {
+  const id = threadId ?? (threadPanels.size === 1 ? [...threadPanels.keys()][0]! : null);
+  if (id === null || !threadPanels.has(id)) return false;
   const params = prTabParams(url);
-  return panel.openTab({
-    tab: THREAD_PR_TAB,
-    params: { ...params },
-    title: pullRequestTabTitle(params.number, summary, `${params.owner}/${params.name}`),
-  });
+  openRevealed(
+    threadRevealKey(id),
+    url,
+    () =>
+      threadPanels.get(id)?.openTab({
+        tab: THREAD_PR_TAB,
+        params: { ...params },
+        title: pullRequestTabTitle(params.number, summary, `${params.owner}/${params.name}`),
+      }) ?? false,
+    onFail,
+  );
+  return true;
 }
 
 /** `::pull-request{url="https://github.com/o/r/pull/1"}` in an agent's reply. */

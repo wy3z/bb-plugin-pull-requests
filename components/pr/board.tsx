@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { TRAY_STATUS, trayStatus } from "@/lib/status";
+import { lastOpenedPullRequest, openRevealed, useRevealed } from "./tab-reveal";
 import type { PullRequestSummary } from "../../server";
 import {
   assess,
@@ -76,6 +77,26 @@ export const PR_TAB = {
   availability: "action",
 } as const;
 
+export const BOARD_REVEAL_KEY = "board";
+
+export function usePageTabVisible(): boolean {
+  return useRevealed(BOARD_REVEAL_KEY);
+}
+
+export function openPagePullRequestTab({
+  experimental_panel: panel,
+}: {
+  experimental_panel: ReturnType<typeof experimental_useAppPanel>;
+}): void {
+  const url = lastOpenedPullRequest(BOARD_REVEAL_KEY);
+  if (!url) {
+    panel.openTab({ tab: PR_TAB });
+    return;
+  }
+  const params = prTabParams(url);
+  panel.openTab({ tab: PR_TAB, params: { ...params }, title: `#${params.number}` });
+}
+
 export interface PullRequestTabParams {
   owner: string;
   name: string;
@@ -122,13 +143,17 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
     selectedTab?.detail.kind === "plugin" && selectedTab.detail.tab.id === PR_TAB.id
       ? parsePrTabParams(selectedTab.detail.params)
       : null;
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
   const openPullRequest = (item: PullRequestListItem) => {
     const params = prTabParams(item.url);
-    panel.openTab({
-      tab: PR_TAB,
-      params: { ...params },
-      title: `#${item.number} ${item.title}`,
-    });
+    openRevealed(BOARD_REVEAL_KEY, item.url, () =>
+      panelRef.current.openTab({
+        tab: PR_TAB,
+        params: { ...params },
+        title: `#${item.number} ${item.title}`,
+      }),
+    );
   };
 
   const [choices, setChoices] = useState<RepositoryChoice[] | null>(null);

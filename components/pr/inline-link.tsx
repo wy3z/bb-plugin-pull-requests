@@ -10,7 +10,7 @@
 // the same link directly.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { compactRelativeTime } from "@/lib/model";
 import { LIFECYCLE, lifecycle } from "@/lib/status";
@@ -275,8 +275,9 @@ export function PullRequestLinkDecorator() {
   const summaries = useSummaries(urls);
   const card = useHoverCard();
 
-  const latest = useRef({ summaries, card });
-  latest.current = { summaries, card };
+  const navigate = useBbNavigate();
+  const latest = useRef({ summaries, card, navigate });
+  latest.current = { summaries, card, navigate };
 
   // A plain click opens the thread's side panel and nothing else; Ctrl/Cmd,
   // Shift and middle clicks keep the browser's behaviour. Window capture runs
@@ -288,7 +289,10 @@ export function PullRequestLinkDecorator() {
       const anchor = target?.closest<HTMLAnchorElement>("a.bb-pr-link");
       const url = anchor ? (anchor.dataset[MARK] ?? anchor.dataset.bbPrUrl) : undefined;
       if (!anchor || !url) return;
-      if (!openInThreadPanel(threadIdFor(anchor), url, latest.current.summaries.get(url))) return;
+      const opened = openInThreadPanel(threadIdFor(anchor), url, latest.current.summaries.get(url), () =>
+        latest.current.navigate.openUrl(url),
+      );
+      if (!opened) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
