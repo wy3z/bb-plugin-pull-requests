@@ -250,7 +250,7 @@ export function SubscribeButton({ threadId, url }: { threadId: string; url: stri
     <Button
       variant="outline"
       size="sm"
-      className={cn("h-8 gap-1.5 text-xs", subscribed && "text-foreground")}
+      className={cn("h-8 gap-1.5 text-xs", subscribed && "text-[color:var(--bbs-text-primary)]")}
       aria-pressed={subscribed}
       disabled={!loaded || busy}
       onClick={() => {

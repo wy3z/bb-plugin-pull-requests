@@ -271,14 +271,14 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
           <h1 className="flex items-baseline gap-2 text-xl font-medium">
             Pull requests
             {load.kind === "ready" ? (
-              <span className="text-xs font-normal text-muted-foreground">{count}</span>
+              <span className="text-xs font-normal text-[color:var(--bbs-text-tertiary)]">{count}</span>
             ) : null}
           </h1>
           <div className="flex-1" />
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground"
+            className="size-8 text-[color:var(--bbs-text-tertiary)]"
             aria-label="Refresh"
             disabled={repository === null || load.kind === "loading"}
             onClick={() => void fetchFirst(true)}
@@ -292,7 +292,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                   icon={choices?.find((c) => c.repository.toLowerCase() === repository?.toLowerCase())?.icon}
                 />
                 <span className="truncate">{repository ?? (ready ? "Choose repository" : "Detecting repository…")}</span>
-                <Icon name="ChevronDown" className="size-3 text-muted-foreground" />
+                <Icon name="ChevronDown" className="size-3 text-[color:var(--bbs-text-tertiary)]" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
@@ -317,15 +317,15 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[11px] text-muted-foreground">Repositories</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">Repositories</DropdownMenuLabel>
               {filteredChoices.length === 0 ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No GitHub projects match.</div>
+                <div className="px-2 py-1.5 text-xs text-[color:var(--bbs-text-tertiary)]">No GitHub projects match.</div>
               ) : (
                 filteredChoices.map((choice) => (
                   <DropdownMenuItem key={choice.repository} onSelect={() => chooseRepository(choice.repository)}>
                     <RepoIcon icon={choice.icon} />
                     <span className="min-w-0 flex-1 truncate">{choice.repository}</span>
-                    <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                    <span className="max-w-[90px] truncate text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">
                       {choice.projectName}
                     </span>
                     <Icon
@@ -345,7 +345,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
           <div className="relative min-w-[180px] flex-1">
             <Icon
               name="Search"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[color:var(--bbs-text-tertiary)]"
             />
             <Input
               value={query}
@@ -360,7 +360,7 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8 text-muted-foreground"
+                className="size-8 text-[color:var(--bbs-text-tertiary)]"
                 aria-label={`Sort: ${sortLabel}`}
               >
                 <Icon name={sort.direction === "asc" ? "ArrowUp" : "ArrowDown"} className="size-4" />
@@ -467,11 +467,11 @@ export function Board({ stars, onToggleStar }: { stars: string[]; onToggleStar: 
                           closed ? current.filter((g) => g !== group) : [...current, group],
                         )
                       }
-                      className="flex h-8 cursor-pointer items-center gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
+                      className="flex h-8 cursor-pointer items-center gap-1.5 px-2 text-[length:var(--bbs-text-row)] text-[color:var(--bbs-text-tertiary)] hover:text-[color:var(--bbs-text-primary)]"
                     >
                       <Icon name={closed ? "ChevronRight" : "ChevronDown"} className="size-3.5" />
-                      <span className="text-foreground">{GROUP_LABEL[group]}</span>
-                      <span className="text-[11px]">{groupItems.length}</span>
+                      <span className="text-[color:var(--bbs-text-primary)]">{GROUP_LABEL[group]}</span>
+                      <span className="text-[length:var(--bbs-text-meta)]">{groupItems.length}</span>
                     </button>
                     {closed ? null : (
                       <div className="flex flex-col gap-px">
@@ -523,7 +523,7 @@ function Skeleton() {
 }
 
 function glyphColor(item: PullRequestListItem): string {
-  if (item.isDraft) return "text-muted-foreground";
+  if (item.isDraft) return "text-[color:var(--bbs-text-tertiary)]";
   if (item.mergeability === "conflicting") return "text-[var(--destructive-text)]";
   if (item.reviewDecision === "changesRequested") return "text-[var(--attention)]";
   return "text-[var(--success)]";
@@ -553,7 +553,7 @@ function Row({
       ? "text-[color-mix(in_oklab,var(--destructive-text)_80%,transparent)]"
       : item.reviewDecision === "changesRequested"
         ? "text-[var(--attention)]"
-        : "text-muted-foreground";
+        : "text-[color:var(--bbs-text-tertiary)]";
   const ciTooltip = [
     `${CI_LABEL[item.ci.state]} · Commit: ${item.headRefOid || "unavailable"}`,
     assessment.missing.map((m) => MISSING_LABEL[m]).join(" · "),
@@ -587,7 +587,7 @@ function Row({
       aria-current={selected ? "true" : undefined}
       title={[ciTooltip, status].filter(Boolean).join("\n")}
       className={cn(
-        "group/pr flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
+        "group/pr flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 py-1.5 text-[length:var(--bbs-text-row)] outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover",
         selected && "bg-state-active hover:bg-state-active",
       )}
     >
@@ -595,13 +595,13 @@ function Row({
         <Icon name={tray.icon} className="size-3.5" />
       </span>
       <span className="min-w-0 flex-1 truncate">{item.title}</span>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{item.number}</span>
-      {tray.label ? <span className={cn("hidden shrink-0 text-xs sm:inline", statusTone === "text-muted-foreground" ? "text-muted-foreground" : statusTone)}>{tray.label}</span> : null}
+      <span className="shrink-0 text-xs tabular-nums text-[color:var(--bbs-text-tertiary)]">#{item.number}</span>
+      {tray.label ? <span className={cn("hidden shrink-0 text-xs sm:inline", statusTone === "text-[color:var(--bbs-text-tertiary)]" ? "text-[color:var(--bbs-text-tertiary)]" : statusTone)}>{tray.label}</span> : null}
       <span className="w-20 shrink-0 text-right">
         <DiffStats additions={item.additions} deletions={item.deletions} />
       </span>
       <span
-        className="w-10 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground"
+        className="w-10 shrink-0 text-right text-[length:var(--bbs-text-meta)] tabular-nums text-[color:var(--bbs-text-tertiary)]"
         title={`${stampLabel} ${relativeTime(stamp, now)} · ${new Date(stamp).toLocaleString()}`}
       >
         {compactRelativeTime(stamp, now)}
@@ -630,7 +630,7 @@ export function StarButton({ starred, onToggle }: { starred: boolean; onToggle: 
     >
       <Icon
         name="Star"
-        className={cn("size-3.5", starred ? "fill-[var(--attention)] text-[var(--attention)]" : "text-muted-foreground")}
+        className={cn("size-3.5", starred ? "fill-[var(--attention)] text-[var(--attention)]" : "text-[color:var(--bbs-text-tertiary)]")}
       />
     </button>
   );

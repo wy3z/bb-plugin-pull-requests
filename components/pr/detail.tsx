@@ -40,7 +40,7 @@ import { Avatar, DiffStats, EmptyAction, EmptyState, ERROR_COPY, Segmented, useN
 type Tone = "neutral" | "positive" | "warning" | "negative" | "merged";
 
 const TONE_TEXT: Record<Tone, string> = {
-  neutral: "text-muted-foreground",
+  neutral: "text-[color:var(--bbs-text-tertiary)]",
   positive: "text-[var(--success)]",
   warning: "text-[var(--attention)]",
   negative: "text-[var(--destructive-text)]",
@@ -136,11 +136,11 @@ function UnderlineTabs({
           role="tab"
           aria-selected={value === option.value}
           onClick={() => onChange(option.value)}
-          className="bb-pr-tab -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-0.5 pb-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground aria-selected:border-foreground aria-selected:text-foreground"
+          className="bb-pr-tab -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-0.5 pb-2 text-[length:var(--bbs-text-row)] text-[color:var(--bbs-text-tertiary)] transition-colors hover:text-[color:var(--bbs-text-primary)] aria-selected:border-foreground aria-selected:text-[color:var(--bbs-text-primary)]"
         >
           {option.icon ? <Icon name={option.icon} className={cn("size-3.5", option.tone ? TONE_TEXT[option.tone] : undefined)} /> : null}
           {option.label}
-          {option.count !== undefined ? <span className="text-[11px] tabular-nums text-muted-foreground">{option.count}</span> : null}
+          {option.count !== undefined ? <span className="text-[length:var(--bbs-text-meta)] tabular-nums text-[color:var(--bbs-text-tertiary)]">{option.count}</span> : null}
         </button>
       ))}
     </div>
@@ -182,7 +182,7 @@ function TitleEditor({ title, onRename }: { title: string; onRename: (title: str
           }
         }}
         onBlur={() => void save()}
-        className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[17px] font-medium leading-[24px] outline-none focus:border-[var(--ring)]"
+        className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[length:var(--bbs-text-display)] font-medium leading-[24px] outline-none focus:border-[var(--ring)]"
       />
     );
   }
@@ -193,8 +193,8 @@ function TitleEditor({ title, onRename }: { title: string; onRename: (title: str
       onClick={() => setEditing(true)}
       className="group/title flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-state-hover"
     >
-      <h1 className="min-w-0 flex-1 text-[17px] font-medium leading-[24px]">{title}</h1>
-      <Icon name="Edit" className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100" />
+      <h1 className="min-w-0 flex-1 text-[length:var(--bbs-text-display)] font-medium leading-[24px]">{title}</h1>
+      <Icon name="Edit" className="mt-1 size-3.5 shrink-0 text-[color:var(--bbs-text-tertiary)] opacity-0 transition-opacity group-hover/title:opacity-100" />
     </button>
   );
 }
@@ -216,7 +216,7 @@ function MergeBox({
   const state = detail.state.toUpperCase();
   if (state === "MERGED") {
     return (
-      <section className="bb-pr-merge flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-[13px]">
+      <section className="bb-pr-merge flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-[length:var(--bbs-text-row)]">
         <Icon name="GitMerge" className={cn("size-4", TONE_TEXT.merged)} />
         Merged
       </section>
@@ -224,7 +224,7 @@ function MergeBox({
   }
   if (state === "CLOSED") {
     return (
-      <section className="bb-pr-merge flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-[13px]">
+      <section className="bb-pr-merge flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-[length:var(--bbs-text-row)]">
         <Icon name="CircleX" className={cn("size-4", TONE_TEXT.negative)} />
         <span className="flex-1">This pull request is closed.</span>
         <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => onState("reopen")}>
@@ -246,7 +246,7 @@ function MergeBox({
             : { text: "No checks reported", tone: "neutral" as Tone, icon: "Circle" as IconName };
   return (
     <section className="bb-pr-merge overflow-hidden rounded-lg border border-border">
-      <div className="flex items-center gap-2 px-4 py-3 text-[13px]">
+      <div className="flex items-center gap-2 px-4 py-3 text-[length:var(--bbs-text-row)]">
         <Icon name={line.icon} className={cn("size-4", TONE_TEXT[line.tone])} />
         <span className="flex-1">{line.text}</span>
       </div>
@@ -269,7 +269,7 @@ function MergeBox({
               value={method}
               disabled={busy !== null}
               onChange={(event) => setMethod(event.currentTarget.value as typeof method)}
-              className="h-8 rounded-md border border-border bg-transparent px-2 text-xs text-muted-foreground"
+              className="h-8 rounded-md border border-border bg-transparent px-2 text-xs text-[color:var(--bbs-text-tertiary)]"
             >
               <option value="squash">Squash and merge</option>
               <option value="merge">Create a merge commit</option>
@@ -313,16 +313,16 @@ function Commits({ url }: { url: string }) {
           key={commit.oid}
           type="button"
           onClick={() => navigate.openUrl(`${url}/commits/${commit.oid}`)}
-          className="flex w-full items-center gap-3 border-b border-border px-4 py-2 text-left text-[13px] last:border-b-0 hover:bg-state-hover"
+          className="flex w-full items-center gap-3 border-b border-border px-4 py-2 text-left text-[length:var(--bbs-text-row)] last:border-b-0 hover:bg-state-hover"
         >
-          <Icon name="Circle" className="size-3 shrink-0 text-muted-foreground" />
+          <Icon name="Circle" className="size-3 shrink-0 text-[color:var(--bbs-text-tertiary)]" />
           <span className="min-w-0 flex-1 truncate" title={commit.headline}>
             {commit.headline}
           </span>
-          {commit.author ? <span className="shrink-0 text-xs text-muted-foreground">{commit.author}</span> : null}
-          <code className="shrink-0 font-mono text-[11px] text-muted-foreground">{commit.oid.slice(0, 7)}</code>
+          {commit.author ? <span className="shrink-0 text-xs text-[color:var(--bbs-text-tertiary)]">{commit.author}</span> : null}
+          <code className="shrink-0 font-mono text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{commit.oid.slice(0, 7)}</code>
           {commit.committedAt ? (
-            <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{shortAge(commit.committedAt, now)}</span>
+            <span className="w-10 shrink-0 text-right text-[length:var(--bbs-text-meta)] tabular-nums text-[color:var(--bbs-text-tertiary)]">{shortAge(commit.committedAt, now)}</span>
           ) : null}
         </button>
       ))}
@@ -361,14 +361,14 @@ function Checks({ detail }: { detail: PullRequestDetail }) {
   const assessment = assess(factsFromDetail(detail));
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-[13px]">
+      <div className="flex items-center gap-2 text-[length:var(--bbs-text-row)]">
         <Icon name={verdict?.icon ?? "Circle"} className={cn("size-4", TONE_TEXT[verdict?.tone ?? "neutral"])} />
         <span className="font-medium">{verdict?.label ?? (assessment.ci.state === "noChecks" ? "No checks reported" : "Checks unavailable")}</span>
         <span className="flex-1" />
-        {validHeadOid(detail.headRefOid) ? <code className="font-mono text-[11px] text-muted-foreground">{detail.headRefOid.slice(0, 7)}</code> : null}
+        {validHeadOid(detail.headRefOid) ? <code className="font-mono text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{detail.headRefOid.slice(0, 7)}</code> : null}
       </div>
       {detail.checks.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-[color:var(--bbs-text-tertiary)]">
           {assessment.ci.state === "unknown" ? "CI metadata is unavailable. Refresh to try again." : "No checks reported for this commit."}
         </div>
       ) : (
@@ -497,7 +497,7 @@ export function DetailPage({
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground"
+              className="size-8 text-[color:var(--bbs-text-tertiary)]"
               aria-label="Open as page"
               onClick={() => navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })}
             >
@@ -507,7 +507,7 @@ export function DetailPage({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground"
+              className="h-8 gap-1.5 px-2 text-xs text-[color:var(--bbs-text-tertiary)]"
               onClick={() => navigate.toPluginPanel("pull-requests", { subPath: "" })}
             >
               <Icon name="ArrowLeft" className="size-3.5" />
@@ -515,21 +515,21 @@ export function DetailPage({
             </Button>
           )}
           <div className="flex-1" />
-          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Copy PR URL" onClick={copyUrl}>
+          <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="Copy PR URL" onClick={copyUrl}>
             <Icon name="Link" className="size-4" />
           </Button>
           {threadId ? (
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground"
+              className="size-8 text-[color:var(--bbs-text-tertiary)]"
               aria-label="Add to Chat"
               onClick={() => composer.insert(`${url} `, { at: "end" })}
             >
               <Icon name="Plus" className="size-4" />
             </Button>
           ) : null}
-          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Open on GitHub" onClick={() => navigate.openUrl(url)}>
+          <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="Open on GitHub" onClick={() => navigate.openUrl(url)}>
             <Icon name="ExternalLink" className="size-4" />
           </Button>
           {threadId ? <SubscribeButton threadId={threadId} url={url} /> : null}
@@ -539,7 +539,7 @@ export function DetailPage({
                 <Button variant="outline" size="sm" className="ml-1 h-8 gap-1.5 text-xs">
                   <Icon name="Bot" className="size-3.5" />
                   Hand off
-                  <Icon name="ChevronDown" className="size-3 text-muted-foreground" />
+                  <Icon name="ChevronDown" className="size-3 text-[color:var(--bbs-text-tertiary)]" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-72">
@@ -550,7 +550,7 @@ export function DetailPage({
                       <Icon name={handoff.icon} className="size-3.5" />
                       <div className="flex min-w-0 flex-col">
                         <span>{handoff.label}</span>
-                        <span className="text-[11px] text-muted-foreground">{handoff.summary}</span>
+                        <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{handoff.summary}</span>
                       </div>
                     </DropdownMenuItem>
                   );
@@ -560,7 +560,7 @@ export function DetailPage({
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="More">
+              <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="More">
                 <Icon name="MoreHorizontal" className="size-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -590,10 +590,10 @@ export function DetailPage({
                 onRename={(title) => mutate("rename", () => rpc.call("pr_rename", { url, title }), "Renamed")}
               />
             ) : (
-              <h1 className="px-2 text-[17px] font-medium">Pull request #{number}</h1>
+              <h1 className="px-2 text-[length:var(--bbs-text-display)] font-medium">Pull request #{number}</h1>
             )}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-[color:var(--bbs-text-tertiary)]">
             {detail ? (
               <span className="flex items-center gap-1.5">
                 <Avatar login={detail.author} size={18} />
@@ -643,7 +643,7 @@ export function DetailPage({
           ) : tab === "description" ? (
             <div className="space-y-4">
               <div className="px-2 text-sm">
-                {detail.body.trim() === "" ? <span className="text-muted-foreground">No description provided.</span> : <Markdown content={detail.body} />}
+                {detail.body.trim() === "" ? <span className="text-[color:var(--bbs-text-tertiary)]">No description provided.</span> : <Markdown content={detail.body} />}
               </div>
               <MergeBox
                 detail={detail}
@@ -688,17 +688,17 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const link = check.detailsUrl || check.targetUrl;
   const name = check.name || check.context || "Unnamed check";
   return (
-    <div className="flex min-h-10 items-center gap-3 px-4 py-2 text-[13px]">
+    <div className="flex min-h-10 items-center gap-3 px-4 py-2 text-[length:var(--bbs-text-row)]">
       <Icon name={style.icon} className={cn("size-3.5 shrink-0", TONE_TEXT[style.tone])} />
       <span className="min-w-0 flex-1 truncate" title={name}>
         {name}
       </span>
-      <span className="text-[11px] text-muted-foreground">{style.label}</span>
+      <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{style.label}</span>
       {link ? (
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 text-muted-foreground"
+          className="size-7 text-[color:var(--bbs-text-tertiary)]"
           aria-label={`Open ${name}`}
           onClick={() => navigate.openUrl(link)}
         >
@@ -739,7 +739,7 @@ function Code({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-xs text-muted-foreground">
+        <span className="flex-1 text-xs text-[color:var(--bbs-text-tertiary)]">
           {diff.length} file{diff.length === 1 ? "" : "s"} changed
         </span>
         <Button
@@ -773,7 +773,7 @@ function Code({
               }
               className="flex w-full cursor-pointer items-center gap-2 border-b border-border px-3 py-2 text-left font-mono text-xs hover:bg-state-hover"
             >
-              <Icon name={isClosed ? "ChevronRight" : "ChevronDown"} className="size-3.5 shrink-0 text-muted-foreground" />
+              <Icon name={isClosed ? "ChevronRight" : "ChevronDown"} className="size-3.5 shrink-0 text-[color:var(--bbs-text-tertiary)]" />
               <span className="min-w-0 flex-1 truncate" title={file.path}>
                 {file.path}
               </span>
@@ -838,7 +838,7 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
   return (
     <div className="space-y-3">
       {entries.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-[color:var(--bbs-text-tertiary)]">
           {detail.reviewThreads !== null ? "No activity yet" : "No conversation yet"}
         </div>
       ) : (
@@ -846,7 +846,7 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
           entry.kind === "thread" ? (
             <section key={entry.thread.id} className="overflow-hidden rounded-lg border border-border">
               <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs">
-                <Icon name="FileDiff" className="size-3.5 text-muted-foreground" />
+                <Icon name="FileDiff" className="size-3.5 text-[color:var(--bbs-text-tertiary)]" />
                 <span className="min-w-0 flex-1 truncate font-mono">
                   {entry.thread.path}
                   {entry.thread.line ?? entry.thread.originalLine
@@ -855,16 +855,16 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
                 </span>
                 <span
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px]",
+                    "rounded px-1.5 py-0.5 text-[length:var(--bbs-text-meta)]",
                     entry.thread.isResolved
-                      ? "bg-muted-foreground/10 text-muted-foreground"
+                      ? "bg-muted-foreground/10 text-[color:var(--bbs-text-tertiary)]"
                       : "bg-[color-mix(in_oklab,var(--attention)_10%,transparent)] text-[var(--attention)]",
                   )}
                 >
                   {entry.thread.isResolved ? "Resolved" : "Unresolved"}
                 </span>
                 {entry.thread.isOutdated ? (
-                  <span className="rounded bg-muted-foreground/10 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="rounded bg-muted-foreground/10 px-1.5 py-0.5 text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">
                     Outdated
                   </span>
                 ) : null}
@@ -904,7 +904,7 @@ function Activity({ detail, now, onPosted }: { detail: PullRequestDetail; now: n
           </p>
         ) : null}
         <div className="mt-2 flex items-center gap-2">
-          <span className="flex-1 text-[11px] text-muted-foreground">
+          <span className="flex-1 text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">
             Posts to GitHub as {detail.viewerLogin ?? "your gh account"}. Ctrl+Enter to send.
           </span>
           <Button variant="ghost" size="sm" onClick={() => navigate.openUrl(detail.url)}>
@@ -937,20 +937,20 @@ function CommentBody({
         <Avatar login={comment.author} size={18} />
         <span className="font-medium">{comment.author || "Deleted account"}</span>
         {comment.viewerDidAuthor ? (
-          <span className="rounded bg-muted-foreground/10 px-1.5 text-[10px] text-muted-foreground">You</span>
+          <span className="rounded bg-muted-foreground/10 px-1.5 text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">You</span>
         ) : null}
         {review && comment.state && comment.state !== "COMMENTED" ? <StatusChip raw={comment.state} /> : null}
-        {reply ? <span className="text-[11px] text-muted-foreground">Reply</span> : null}
+        {reply ? <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">Reply</span> : null}
         <span className="flex-1" />
         {comment.createdAt ? (
-          <span className="text-[11px] text-muted-foreground" title={new Date(comment.createdAt).toLocaleString()}>
+          <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]" title={new Date(comment.createdAt).toLocaleString()}>
             {relativeTime(comment.createdAt, now)}
           </span>
         ) : null}
         {comment.url ? (
           <button
             type="button"
-            className="cursor-pointer text-muted-foreground hover:text-foreground"
+            className="cursor-pointer text-[color:var(--bbs-text-tertiary)] hover:text-[color:var(--bbs-text-primary)]"
             aria-label="Open on GitHub"
             title="Open on GitHub"
             onClick={() => navigate.openUrl(comment.url)}

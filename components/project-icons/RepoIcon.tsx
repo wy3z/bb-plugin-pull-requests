@@ -13,7 +13,7 @@ export function RepoIcon({ icon, className = "size-3.5" }: { icon: string | null
       icon={parsed}
       fallback="Folder"
       className={className}
-      mutedClassName="text-muted-foreground"
+      mutedClassName="text-[color:var(--bbs-text-tertiary)]"
     />
   );
 }
