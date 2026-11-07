@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { stripRemoteCredentials } from "./lib/change-request";
+import { parseRemoteUrl, type ParsedRemote } from "./lib/change-request";
 import { hostContract, type GitLabHttp, type InspectResult } from "./lib/host-contract";
 import { parseGlabApiOutput } from "./lib/providers/gitlab";
 
@@ -118,10 +118,10 @@ export async function inspectCheckout(run: Runner, path: string, signal?: AbortS
     .map((name) => name.trim())
     .filter((name) => REMOTE_NAME_RE.test(name))
     .slice(0, MAX_REMOTES);
-  const remotes: { name: string; url: string }[] = [];
+  const remotes: { name: string; remote: ParsedRemote | null }[] = [];
   for (const name of remoteNames) {
     const url = await value(["remote", "get-url", name]);
-    if (url !== null) remotes.push({ name, url: stripRemoteCredentials(url) });
+    if (url !== null) remotes.push({ name, remote: parseRemoteUrl(url) });
   }
   return { ok: true, path, branch, head: head && /^[0-9a-f]{40,64}$/.test(head) ? head : null, upstream, pushRemote, remotes };
 }

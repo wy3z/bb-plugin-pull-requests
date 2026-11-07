@@ -1298,7 +1298,7 @@ function registerChangeRequests(bb: BbPluginApi) {
       type: "string",
       label: "Self-hosted GitLab instances",
       description:
-        "gitlab.com works without this. List other GitLab hosts, separated by commas or spaces: git.example.com, or alias=https://git.example.com/prefix for an SSH alias or an install under a path. Merge requests are read through glab on each environment's machine.",
+        "gitlab.com works without this. List other GitLab hosts, separated by commas or spaces: git.example.com (HTTPS and SSH remotes on that host), git.example.com:8443 (HTTPS on that port only), or alias=https://git.example.com for an SSH host alias. GitLab installed under a path isn't supported yet. Merge requests are read through glab on each environment's machine.",
       default: "",
       experimental_multiline: true,
     },

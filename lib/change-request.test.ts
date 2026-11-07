@@ -10,6 +10,7 @@ import {
   chooseForge,
   gitlabIdentity,
   glabConnection,
+  hasUnverifiedHistory,
   mergeRequestCandidate,
   mergeRequestState,
   parseChangeRequestUrl,
@@ -19,12 +20,11 @@ import {
   pickSameProjectMergeRequest,
   pipelineCiState,
   resolveForge,
-  stripRemoteCredentials,
   type CheckoutFacts,
   type MergeRequestCandidate,
 } from "./change-request";
 
-const selfHosted = parseGitLabInstances("git.example.com, corp-gl=https://code.corp.example/gitlab").instances;
+const selfHosted = parseGitLabInstances("git.example.com, corp-gl=https://code.corp.example, prefixed=https://lab.corp.example/gitlab").instances;
 
 describe("remote parsing", () => {
   it.each([
@@ -52,19 +52,27 @@ describe("remote parsing", () => {
     expect(parseRemoteUrl(raw)).toBeNull();
   });
 
-  it("strips credentials before a URL leaves the machine", () => {
-    expect(stripRemoteCredentials("https://oauth2:glpat-secret@gitlab.com/group/project.git")).toBe("https://gitlab.com/group/project.git");
-    expect(stripRemoteCredentials("ssh://git:pw@host.example/group/project.git")).toBe("ssh://git@host.example/group/project.git");
-    expect(stripRemoteCredentials("git@gitlab.com:group/project.git")).toBe("git@gitlab.com:group/project.git");
+  it("keeps no userinfo, query or fragment in a parsed remote", () => {
+    const parsed = parseRemoteUrl("https://oauth2:glpat-secret@gitlab.com/group/project.git?private_token=x#frag");
+    expect(parsed).toEqual({ scheme: "https", host: "gitlab.com", port: null, path: "group/project" });
+    expect(parseRemoteUrl("git@gitlab.com:group/project.git?private_token=x")).toBeNull();
   });
 });
 
 describe("GitLab instances", () => {
   it("accepts bare hosts and aliases, rejecting anything that isn't https", () => {
     const parsed = parseGitLabInstances("git.example.com\nalias=https://code.corp.example/gitlab, http://plain.example, github.com, a=b=c");
-    expect(parsed.instances.map((instance) => instance.base)).toEqual(["https://git.example.com", "https://code.corp.example/gitlab"]);
-    expect(parsed.instances[1]!.aliases).toContain("alias");
+    expect(parsed.instances).toEqual([
+      { base: "https://git.example.com", hostname: "git.example.com", prefix: "", sshAliases: ["git.example.com"] },
+      { base: "https://code.corp.example/gitlab", hostname: "code.corp.example", prefix: "/gitlab", sshAliases: ["alias"] },
+    ]);
     expect(parsed.invalid).toEqual(["http://plain.example", "github.com", "a=b=c"]);
+  });
+
+  it("rejects an SSH alias two instances claim", () => {
+    const parsed = parseGitLabInstances("shared=https://a.example shared=https://b.example gitlab.com=https://c.example");
+    expect(parsed.instances.every((instance) => instance.sshAliases.length === 0)).toBe(true);
+    expect(parsed.invalid).toEqual(["shared=https://a.example", "shared=https://b.example", "gitlab.com=https://c.example"]);
   });
 
   it("resolves gitlab.com without configuration and self-hosted only when listed", () => {
@@ -81,14 +89,34 @@ describe("GitLab instances", () => {
     });
   });
 
-  it("maps an SSH alias and strips an install prefix from HTTPS remotes", () => {
+  it("maps an explicit SSH alias, and HTTPS only by exact authority", () => {
     expect(resolveForge(parseRemoteUrl("corp-gl:platform/tools/cli.git")!, selfHosted)).toMatchObject({
-      instance: { base: "https://code.corp.example/gitlab", hostname: "code.corp.example" },
+      instance: { base: "https://code.corp.example", hostname: "code.corp.example" },
       projectPath: "platform/tools/cli",
     });
-    expect(resolveForge(parseRemoteUrl("https://code.corp.example/gitlab/platform/tools/cli.git")!, selfHosted)).toMatchObject({
+    expect(resolveForge(parseRemoteUrl("https://code.corp.example/platform/tools/cli.git")!, selfHosted)).toMatchObject({
       projectPath: "platform/tools/cli",
     });
+    expect(resolveForge(parseRemoteUrl("git@code.corp.example:platform/tools/cli.git")!, selfHosted)).toBeNull();
+  });
+
+  it("reports an install under a path prefix as unsupported rather than routing it to the root", () => {
+    expect(resolveForge(parseRemoteUrl("https://lab.corp.example/gitlab/platform/cli.git")!, selfHosted)).toEqual({
+      provider: "unsupported",
+      base: "https://lab.corp.example/gitlab",
+      reason: "prefix",
+    });
+    expect(resolveForge(parseRemoteUrl("prefixed:platform/cli.git")!, selfHosted)).toMatchObject({ provider: "unsupported", reason: "prefix" });
+    expect(parseChangeRequestUrl("https://lab.corp.example/gitlab/platform/cli/-/merge_requests/3", selfHosted)).toBeNull();
+  });
+
+  it("matches an HTTPS remote's authority exactly, port included", () => {
+    const both = parseGitLabInstances("git.example.com:8443 git.example.com").instances;
+    expect(resolveForge(parseRemoteUrl("https://git.example.com/g/p.git")!, both)).toMatchObject({ instance: { base: "https://git.example.com" } });
+    expect(resolveForge(parseRemoteUrl("https://git.example.com:8443/g/p.git")!, both)).toMatchObject({ instance: { base: "https://git.example.com:8443" } });
+    expect(resolveForge(parseRemoteUrl("git@git.example.com:g/p.git")!, both)).toMatchObject({ instance: { base: "https://git.example.com" } });
+    const portOnly = parseGitLabInstances("git.example.com:8443").instances;
+    expect(resolveForge(parseRemoteUrl("https://git.example.com/g/p.git")!, portOnly)).toBeNull();
   });
 
   it("never treats an unknown host as GitLab because of its name", () => {
@@ -127,8 +155,8 @@ describe("identity", () => {
       url: "https://gitlab.com/Group/Sub/Deeper/Project/-/merge_requests/7",
       projectId: null,
     });
-    expect(parseChangeRequestUrl("https://code.corp.example/gitlab/platform/cli/-/merge_requests/3", selfHosted)).toMatchObject({
-      instance: "https://code.corp.example/gitlab",
+    expect(parseChangeRequestUrl("https://code.corp.example/platform/cli/-/merge_requests/3", selfHosted)).toMatchObject({
+      instance: "https://code.corp.example",
       projectPath: "platform/cli",
     });
   });
@@ -140,12 +168,12 @@ describe("identity", () => {
     expect(parseChangeRequestUrl("https://gitlab.com/group/project/-/issues/1", [])).toBeNull();
   });
 
-  it("builds the canonical URL from the instance, not from an unexpected web_url", () => {
+  it("takes identity only from a web_url on the same instance, never inventing one", () => {
     const instance = parseGitLabInstances("git.example.com").instances[0]!;
-    const candidate = mergeRequestCandidate(mr({ iid: 4, web_url: "https://evil.example/team/project/-/merge_requests/4" }))!;
-    expect(gitlabIdentity(instance, "team/project", candidate).url).toBe("https://git.example.com/team/project/-/merge_requests/4");
+    expect(gitlabIdentity(instance, mergeRequestCandidate(mr({ iid: 4, web_url: "https://evil.example/team/project/-/merge_requests/4" }))!)).toBeNull();
+    expect(gitlabIdentity(instance, mergeRequestCandidate(mr({ iid: 4, web_url: "https://git.example.com/team/project/-/merge_requests/5" }))!)).toBeNull();
     const trusted = mergeRequestCandidate(mr({ iid: 4, web_url: "https://git.example.com/Team/Project/-/merge_requests/4" }))!;
-    expect(gitlabIdentity(instance, "team/project", trusted)).toMatchObject({ projectPath: "Team/Project", projectId: 10 });
+    expect(gitlabIdentity(instance, trusted)).toMatchObject({ projectPath: "Team/Project", projectId: 10, url: "https://git.example.com/Team/Project/-/merge_requests/4" });
   });
 
   it("round-trips a glab connection without accepting arbitrary text", () => {
@@ -211,12 +239,11 @@ describe("picking the branch's merge request", () => {
     expect(pickSameProjectMergeRequest(candidates({ iid: 1 }, { iid: 2, draft: true }), "feature")).toEqual({ kind: "ambiguous", count: 2 });
   });
 
-  it("falls back to the newest historical request", () => {
-    const pick = pickSameProjectMergeRequest(
-      candidates({ iid: 3, state: "closed", updated_at: "2026-10-01T00:00:00Z" }, { iid: 4, state: "merged", updated_at: "2026-10-02T00:00:00Z" }),
-      "feature",
-    );
-    expect(pick).toMatchObject({ kind: "one", mergeRequest: { iid: 4 } });
+  it("never picks a merged or closed request by branch name alone", () => {
+    const history = candidates({ iid: 3, state: "closed" }, { iid: 4, state: "merged" });
+    expect(pickSameProjectMergeRequest(history, "feature")).toEqual({ kind: "none" });
+    expect(hasUnverifiedHistory(history, "feature")).toBe(true);
+    expect(hasUnverifiedHistory(history, "other")).toBe(false);
   });
 
   it("ignores requests from forks and other branches", () => {
@@ -225,6 +252,8 @@ describe("picking the branch's merge request", () => {
     ).toEqual({ kind: "none" });
   });
 });
+
+const remoteFacts = (name: string, url: string) => ({ name, remote: parseRemoteUrl(url) });
 
 describe("choosing the remote", () => {
   const facts = (overrides: Partial<CheckoutFacts>): CheckoutFacts => ({
@@ -238,9 +267,9 @@ describe("choosing the remote", () => {
 
   it("uses the push remote, then upstream, then origin, then the rest", () => {
     const remotes = [
-      { name: "backup", url: "git@gitlab.com:mirror/project.git" },
-      { name: "origin", url: "git@gitlab.com:group/project.git" },
-      { name: "fork", url: "git@gitlab.com:me/project.git" },
+      remoteFacts("backup", "git@gitlab.com:mirror/project.git"),
+      remoteFacts("origin", "git@gitlab.com:group/project.git"),
+      remoteFacts("fork", "git@gitlab.com:me/project.git"),
     ];
     expect(chooseForge(facts({ remotes }), [])).toMatchObject({ kind: "found", candidate: { remote: "origin" } });
     expect(chooseForge(facts({ remotes, pushRemote: "fork" }), [])).toMatchObject({ kind: "found", candidate: { remote: "fork" } });
@@ -251,9 +280,9 @@ describe("choosing the remote", () => {
 
   it("skips remotes it can't place and reports unknown hosts", () => {
     expect(
-      chooseForge(facts({ remotes: [{ name: "origin", url: "git@bitbucket.org:team/project.git" }, { name: "lab", url: "git@git.example.com:team/project.git" }] }), selfHosted),
+      chooseForge(facts({ remotes: [remoteFacts("origin", "git@bitbucket.org:team/project.git"), remoteFacts("lab", "git@git.example.com:team/project.git")] }), selfHosted),
     ).toMatchObject({ kind: "found", candidate: { remote: "lab", forge: { provider: "gitlab" } } });
-    expect(chooseForge(facts({ remotes: [{ name: "origin", url: "git@bitbucket.org:team/project.git" }] }), [])).toEqual({
+    expect(chooseForge(facts({ remotes: [remoteFacts("origin", "git@bitbucket.org:team/project.git")] }), [])).toEqual({
       kind: "unsupported",
       hosts: ["bitbucket.org"],
     });

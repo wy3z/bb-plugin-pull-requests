@@ -34,26 +34,6 @@ function cleanPath(raw: string): string | null {
   return validProjectPath(path) ? path : null;
 }
 
-export function stripRemoteCredentials(raw: string): string {
-  const value = raw.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(value);
-  if (scheme) {
-    try {
-      const url = new URL(value);
-      if (url.protocol === "https:" || url.protocol === "http:") {
-        url.username = "";
-        url.password = "";
-      } else if (url.password) {
-        url.password = "";
-      }
-      return url.toString();
-    } catch {
-      return value.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]*@/i, "$1");
-    }
-  }
-  return value;
-}
-
 export function parseRemoteUrl(raw: string | null | undefined): ParsedRemote | null {
   if (typeof raw !== "string") return null;
   const value = raw.trim();
@@ -94,7 +74,8 @@ export function parseRemoteUrl(raw: string | null | undefined): ParsedRemote | n
 export interface GitLabInstance {
   base: string;
   hostname: string;
-  aliases: string[];
+  prefix: string;
+  sshAliases: string[];
 }
 
 export interface InstanceParseResult {
@@ -102,9 +83,14 @@ export interface InstanceParseResult {
   invalid: string[];
 }
 
-export const GITLAB_COM: GitLabInstance = { base: "https://gitlab.com", hostname: "gitlab.com", aliases: ["gitlab.com", "altssh.gitlab.com"] };
+export const GITLAB_COM: GitLabInstance = {
+  base: "https://gitlab.com",
+  hostname: "gitlab.com",
+  prefix: "",
+  sshAliases: ["gitlab.com", "altssh.gitlab.com"],
+};
 
-function normaliseBase(raw: string): { base: string; hostname: string; host: string } | null {
+function normaliseBase(raw: string): { base: string; hostname: string; host: string; port: string; prefix: string } | null {
   let url: URL;
   try {
     url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
@@ -117,33 +103,48 @@ function normaliseBase(raw: string): { base: string; hostname: string; host: str
   const prefix = url.pathname.replace(/\/+$/, "");
   if (prefix !== "" && !prefix.split("/").slice(1).every((segment) => SEGMENT_RE.test(segment))) return null;
   const hostname = url.port ? `${host}:${url.port}` : host;
-  return { base: `https://${hostname}${prefix}`, hostname, host };
+  return { base: `https://${hostname}${prefix}`, hostname, host, port: url.port, prefix };
 }
 
 export function parseGitLabInstances(text: string | null | undefined): InstanceParseResult {
   const instances: GitLabInstance[] = [];
   const invalid: string[] = [];
+  const claims = new Map<string, { base: string; entries: string[] }>();
+  for (const name of GITLAB_COM.sshAliases) claims.set(name, { base: GITLAB_COM.base, entries: [] });
+  const conflicted = new Set<string>();
   for (const entry of (text ?? "").split(/[\s,]+/).filter(Boolean)) {
     const eq = entry.indexOf("=");
     const alias = eq >= 0 ? entry.slice(0, eq).toLowerCase() : null;
     const target = normaliseBase(eq >= 0 ? entry.slice(eq + 1) : entry);
-    if (target === null || (alias !== null && !HOST_RE.test(alias))) {
+    if (target === null || (alias !== null && !HOST_RE.test(alias)) || target.host === "github.com" || alias === "github.com") {
       invalid.push(entry);
       continue;
     }
-    if (target.hostname === "github.com" || alias === "github.com") {
-      invalid.push(entry);
-      continue;
+    if (target.base === GITLAB_COM.base && alias === null) continue;
+    const sshAliases = alias !== null ? [alias] : target.port === "" && target.prefix === "" ? [target.host] : [];
+    for (const name of sshAliases) {
+      const claim = claims.get(name);
+      if (claim && claim.base !== target.base) {
+        conflicted.add(name);
+        claim.entries.push(entry);
+      } else if (claim) {
+        claim.entries.push(entry);
+      } else {
+        claims.set(name, { base: target.base, entries: [entry] });
+      }
     }
     const existing = instances.find((instance) => instance.base === target.base);
-    const aliases = [target.hostname, target.host, ...(alias ? [alias] : [])];
     if (existing) {
-      for (const name of aliases) if (!existing.aliases.includes(name)) existing.aliases.push(name);
+      for (const name of sshAliases) if (!existing.sshAliases.includes(name)) existing.sshAliases.push(name);
     } else {
-      instances.push({ base: target.base, hostname: target.hostname, aliases: [...new Set(aliases)] });
+      instances.push({ base: target.base, hostname: target.hostname, prefix: target.prefix, sshAliases });
     }
   }
-  return { instances, invalid };
+  for (const name of conflicted) {
+    for (const entry of claims.get(name)!.entries) if (!invalid.includes(entry)) invalid.push(entry);
+    for (const instance of instances) instance.sshAliases = instance.sshAliases.filter((alias) => alias !== name);
+  }
+  return { instances: instances.filter((instance) => instance.base !== GITLAB_COM.base), invalid };
 }
 
 export function knownGitLabInstances(configured: readonly GitLabInstance[]): GitLabInstance[] {
@@ -152,29 +153,31 @@ export function knownGitLabInstances(configured: readonly GitLabInstance[]): Git
 
 export type ForgeResolution =
   | { provider: "github"; base: "https://github.com"; projectPath: string }
-  | { provider: "gitlab"; instance: GitLabInstance; projectPath: string };
+  | { provider: "gitlab"; instance: GitLabInstance; projectPath: string }
+  | { provider: "unsupported"; base: string; reason: "prefix" | "conflict" };
 
 export function resolveForge(remote: ParsedRemote, configured: readonly GitLabInstance[]): ForgeResolution | null {
-  const webKey = remote.port !== null && (remote.scheme === "https" || remote.scheme === "http") ? `${remote.host}:${remote.port}` : remote.host;
   if (remote.host === "github.com" || remote.host === "ssh.github.com") {
     const parts = remote.path.split("/");
     if (parts.length !== 2) return null;
     return { provider: "github", base: "https://github.com", projectPath: remote.path };
   }
-  for (const instance of knownGitLabInstances(configured)) {
-    const web = remote.scheme === "https" || remote.scheme === "http";
-    const matches = web ? instance.aliases.includes(webKey) || (remote.port === null && instance.aliases.includes(remote.host)) : instance.aliases.includes(remote.host);
-    if (!matches) continue;
-    let path = remote.path;
-    const prefix = new URL(instance.base).pathname.replace(/^\/+|\/+$/g, "");
-    if (web && prefix !== "") {
-      if (!path.startsWith(`${prefix}/`)) continue;
-      path = path.slice(prefix.length + 1);
-    }
-    if (!validProjectPath(path)) continue;
-    return { provider: "gitlab", instance, projectPath: path };
+  const known = knownGitLabInstances(configured);
+  const web = remote.scheme === "https" || remote.scheme === "http";
+  const matches = web
+    ? known.filter((instance) => instance.hostname === (remote.port !== null ? `${remote.host}:${remote.port}` : remote.host))
+    : known.filter((instance) => instance.sshAliases.includes(remote.host));
+  if (matches.length === 0) return null;
+  if (web) {
+    const prefixed = matches.find((instance) => instance.prefix !== "" && `/${remote.path}`.startsWith(`${instance.prefix}/`));
+    if (prefixed) return { provider: "unsupported", base: prefixed.base, reason: "prefix" };
+    const root = matches.find((instance) => instance.prefix === "");
+    return root ? { provider: "gitlab", instance: root, projectPath: remote.path } : null;
   }
-  return null;
+  if (matches.length > 1) return { provider: "unsupported", base: matches[0]!.base, reason: "conflict" };
+  const instance = matches[0]!;
+  if (instance.prefix !== "") return { provider: "unsupported", base: instance.base, reason: "prefix" };
+  return { provider: "gitlab", instance, projectPath: remote.path };
 }
 
 export function gitlabProjectApiPath(project: string | number): string {
@@ -205,14 +208,11 @@ export function parseChangeRequestUrl(
     return null;
   }
   if (url.protocol !== "https:" || url.username || url.password) return null;
-  const origin = `https://${url.host.toLowerCase()}`;
+  const authority = url.host.toLowerCase();
   const pathname = url.pathname.replace(/\/+$/, "");
   for (const instance of knownGitLabInstances(configured)) {
-    const base = new URL(instance.base);
-    if (`https://${base.host}` !== origin) continue;
-    const prefix = base.pathname.replace(/\/+$/, "");
-    if (prefix !== "" && !pathname.startsWith(`${prefix}/`)) continue;
-    const rest = pathname.slice(prefix.length + 1);
+    if (instance.prefix !== "" || instance.hostname !== authority) continue;
+    const rest = pathname.slice(1);
     const match = /^(.+)\/-\/merge_requests\/([1-9]\d{0,9})$/.exec(rest);
     if (!match || !validProjectPath(match[1]!)) continue;
     const number = Number(match[2]);
@@ -333,57 +333,45 @@ function active(candidate: MergeRequestCandidate): boolean {
   return candidate.state === "open" || candidate.state === "draft";
 }
 
-function newest(a: MergeRequestCandidate, b: MergeRequestCandidate): number {
-  const at = a.updatedAt ? Date.parse(a.updatedAt) : Number.NaN;
-  const bt = b.updatedAt ? Date.parse(b.updatedAt) : Number.NaN;
-  if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return bt - at;
-  return b.iid - a.iid;
+function ownBranch(candidate: MergeRequestCandidate, branch: string): boolean {
+  return (
+    candidate.sourceBranch === branch &&
+    candidate.sourceProjectId === candidate.targetProjectId &&
+    candidate.projectId === candidate.targetProjectId
+  );
 }
 
-export function pickSameProjectMergeRequest(
-  candidates: readonly MergeRequestCandidate[],
-  branch: string,
-): MergeRequestPick {
-  const own = candidates.filter(
-    (candidate) =>
-      candidate.sourceBranch === branch &&
-      candidate.sourceProjectId === candidate.targetProjectId &&
-      candidate.projectId === candidate.targetProjectId,
-  );
-  const live = own.filter(active);
+export function pickSameProjectMergeRequest(candidates: readonly MergeRequestCandidate[], branch: string): MergeRequestPick {
+  const live = candidates.filter((candidate) => ownBranch(candidate, branch) && active(candidate));
   if (live.length > 1) return { kind: "ambiguous", count: live.length };
   if (live.length === 1) return { kind: "one", mergeRequest: live[0]! };
-  const history = [...own].sort(newest);
-  return history.length > 0 ? { kind: "one", mergeRequest: history[0]! } : { kind: "none" };
+  return { kind: "none" };
 }
 
-export function canonicalMergeRequestUrl(instance: GitLabInstance, fallbackPath: string, candidate: Pick<MergeRequestCandidate, "iid" | "webUrl">): { url: string; projectPath: string } {
-  const expectedSuffix = `/-/merge_requests/${candidate.iid}`;
-  if (candidate.webUrl.startsWith(`${instance.base}/`)) {
-    const rest = candidate.webUrl.slice(instance.base.length + 1).replace(/\/+$/, "");
-    if (rest.endsWith(expectedSuffix)) {
-      const path = rest.slice(0, -expectedSuffix.length);
-      if (validProjectPath(path)) return { url: gitlabMergeRequestUrl(instance.base, path, candidate.iid), projectPath: path };
-    }
-  }
-  return { url: gitlabMergeRequestUrl(instance.base, fallbackPath, candidate.iid), projectPath: fallbackPath };
+export function hasUnverifiedHistory(candidates: readonly MergeRequestCandidate[], branch: string): boolean {
+  return candidates.some((candidate) => ownBranch(candidate, branch) && !active(candidate));
 }
 
-export function gitlabIdentity(instance: GitLabInstance, fallbackPath: string, candidate: MergeRequestCandidate): GitLabIdentity {
-  const { url, projectPath } = canonicalMergeRequestUrl(instance, fallbackPath, candidate);
+export function gitlabIdentity(instance: GitLabInstance, candidate: Pick<MergeRequestCandidate, "iid" | "webUrl" | "projectId">): GitLabIdentity | null {
+  const suffix = `/-/merge_requests/${candidate.iid}`;
+  if (!candidate.webUrl.startsWith(`${instance.base}/`)) return null;
+  const rest = candidate.webUrl.slice(instance.base.length + 1).replace(/\/+$/, "");
+  if (!rest.endsWith(suffix)) return null;
+  const projectPath = rest.slice(0, -suffix.length);
+  if (!validProjectPath(projectPath)) return null;
   return {
     provider: "gitlab",
     instance: instance.base,
     projectPath,
     number: candidate.iid,
-    url,
+    url: gitlabMergeRequestUrl(instance.base, projectPath, candidate.iid),
     projectId: candidate.projectId,
   };
 }
 
 export interface RemoteFacts {
   name: string;
-  url: string;
+  remote: ParsedRemote | null;
 }
 
 export interface CheckoutFacts {
@@ -397,14 +385,15 @@ export interface CheckoutFacts {
 export interface ForgeCandidate {
   remote: string;
   branch: string;
-  forge: ForgeResolution;
+  forge: Exclude<ForgeResolution, { provider: "unsupported" }>;
 }
 
 export type ForgeChoice =
   | { kind: "found"; candidate: ForgeCandidate }
   | { kind: "detached" }
   | { kind: "noRemote" }
-  | { kind: "unsupported"; hosts: string[] };
+  | { kind: "unsupported"; hosts: string[] }
+  | { kind: "unsupportedInstance"; base: string; reason: "prefix" | "conflict" };
 
 export function chooseForge(facts: CheckoutFacts, configured: readonly GitLabInstance[]): ForgeChoice {
   if (facts.branch === null) return { kind: "detached" };
@@ -420,13 +409,14 @@ export function chooseForge(facts: CheckoutFacts, configured: readonly GitLabIns
   const hosts: string[] = [];
   for (const name of order) {
     const remote = facts.remotes.find((entry) => entry.name === name)!;
-    const parsed = parseRemoteUrl(remote.url);
+    const parsed = remote.remote;
     if (parsed === null) continue;
     const forge = resolveForge(parsed, configured);
     if (forge === null) {
       if (!hosts.includes(parsed.host)) hosts.push(parsed.host);
       continue;
     }
+    if (forge.provider === "unsupported") return { kind: "unsupportedInstance", base: forge.base, reason: forge.reason };
     const branch = facts.upstream && facts.upstream.remote === name ? facts.upstream.branch : facts.branch;
     return { kind: "found", candidate: { remote: name, branch, forge } };
   }

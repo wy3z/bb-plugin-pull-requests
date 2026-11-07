@@ -87,16 +87,38 @@ export function githubRowFromStatus(raw: unknown, fetchedAt: string): ChangeRequ
 interface CacheEntry {
   at: number;
   row: ChangeRequestRow;
+  provenance: string | null;
+}
+
+interface Resolved {
+  row: ChangeRequestRow;
+  provenance: string | null;
 }
 
 type Plan =
   | { kind: "row"; row: ChangeRequestRow }
   | { kind: "github" }
-  | { kind: "gitlab"; hostId: string; machine: string; instance: GitLabInstance; projectPath: string; branch: string };
+  | {
+      kind: "gitlab";
+      hostId: string;
+      path: string;
+      head: string | null;
+      machine: string;
+      instance: GitLabInstance;
+      projectPath: string;
+      branch: string;
+    };
+
+function provenanceOf(step: Extract<Plan, { kind: "gitlab" }>): string {
+  return JSON.stringify([step.hostId, step.path, step.instance.base, step.projectPath, step.branch, step.head]);
+}
 
 export function createDiscovery(deps: DiscoveryDeps) {
   const cache = new Map<string, CacheEntry>();
   const inflight = new Map<string, Promise<ChangeRequestRow>>();
+  const owners = new Map<string, number>();
+  let tickets = 0;
+  let epoch = 0;
   const lastProvider = new Map<string, ChangeRequestProvider>();
   const rateLimitedUntil = new Map<string, number>();
   let gitlabActive = 0;
@@ -113,11 +135,11 @@ export function createDiscovery(deps: DiscoveryDeps) {
     }
   }
 
-  function remember(environmentId: string, row: ChangeRequestRow) {
+  function remember(environmentId: string, { row, provenance }: Resolved) {
     const provider = row.outcome === "available" ? row.changeRequest.identity.provider : row.provider;
     if (provider) lastProvider.set(environmentId, provider);
     cache.delete(environmentId);
-    cache.set(environmentId, { at: deps.now(), row });
+    cache.set(environmentId, { at: deps.now(), row, provenance });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -198,6 +220,17 @@ export function createDiscovery(deps: DiscoveryDeps) {
           const choice = chooseForge(result, deps.instances());
           if (choice.kind === "detached" || choice.kind === "noRemote") {
             plans.set(id, { kind: "row", row: { outcome: "absent", provider: null } });
+          } else if (choice.kind === "unsupportedInstance") {
+            plans.set(id, {
+              kind: "row",
+              row: unavailable(
+                "gitlab",
+                "unsupportedHost",
+                choice.reason === "prefix"
+                  ? `GitLab installed under a path (${choice.base}) isn't supported yet.`
+                  : `More than one GitLab instance in Pull Requests settings claims this remote's host.`,
+              ),
+            });
           } else if (choice.kind === "unsupported") {
             plans.set(id, {
               kind: "row",
@@ -215,6 +248,8 @@ export function createDiscovery(deps: DiscoveryDeps) {
             plans.set(id, {
               kind: "gitlab",
               hostId,
+              path,
+              head: result.head,
               machine,
               instance: choice.candidate.forge.instance,
               projectPath: choice.candidate.forge.projectPath,
@@ -227,11 +262,14 @@ export function createDiscovery(deps: DiscoveryDeps) {
     return plans;
   }
 
-  async function resolveGitLab(environmentId: string, step: Extract<Plan, { kind: "gitlab" }>): Promise<ChangeRequestRow> {
-    const until = rateLimitedUntil.get(step.instance.base) ?? 0;
+  async function resolveGitLab(environmentId: string, step: Extract<Plan, { kind: "gitlab" }>): Promise<Resolved> {
+    const provenance = provenanceOf(step);
+    const backoffKey = `${step.hostId}\n${step.instance.base}`;
+    const until = rateLimitedUntil.get(backoffKey) ?? 0;
     if (deps.now() < until) {
-      const previous = cache.get(environmentId)?.row;
-      return previous ?? unavailable("gitlab", "rateLimited", `${step.instance.hostname} is rate limiting requests. Try again in a few minutes.`);
+      const previous = cache.get(environmentId);
+      if (previous && previous.provenance === provenance) return { row: previous.row, provenance };
+      return { row: unavailable("gitlab", "rateLimited", `${step.instance.hostname} is rate limiting requests. Try again in a few minutes.`), provenance };
     }
     const row = await gitlabSlot(() =>
       discoverMergeRequest(
@@ -246,25 +284,26 @@ export function createDiscovery(deps: DiscoveryDeps) {
         },
       ),
     );
-    if (row.outcome === "unavailable" && row.reason === "rateLimited") rateLimitedUntil.set(step.instance.base, deps.now() + RATE_LIMIT_MS);
-    return row;
+    if (row.outcome === "unavailable" && row.reason === "rateLimited") rateLimitedUntil.set(backoffKey, deps.now() + RATE_LIMIT_MS);
+    return { row, provenance };
   }
 
-  async function load(environmentIds: string[]): Promise<Map<string, ChangeRequestRow>> {
-    const rows = new Map<string, ChangeRequestRow>();
+  async function load(environmentIds: string[]): Promise<Map<string, Resolved>> {
+    const rows = new Map<string, Resolved>();
+    const plain = (id: string, row: ChangeRequestRow) => void rows.set(id, { row, provenance: null });
     const plans = await plan(environmentIds);
     const github: string[] = [];
     const gitlab: Promise<void>[] = [];
     for (const id of environmentIds) {
       const step = plans.get(id);
-      if (!step) rows.set(id, unavailable(null, "unknown", "This environment couldn't be checked."));
-      else if (step.kind === "row") rows.set(id, step.row);
+      if (!step) plain(id, unavailable(null, "unknown", "This environment couldn't be checked."));
+      else if (step.kind === "row") plain(id, step.row);
       else if (step.kind === "github") github.push(id);
       else
         gitlab.push(
           resolveGitLab(id, step).then(
-            (row) => void rows.set(id, row),
-            () => void rows.set(id, unavailable("gitlab", "unknown", "The merge request lookup failed unexpectedly.")),
+            (resolved) => void rows.set(id, resolved),
+            () => plain(id, unavailable("gitlab", "unknown", "The merge request lookup failed unexpectedly.")),
           ),
         );
     }
@@ -272,10 +311,10 @@ export function createDiscovery(deps: DiscoveryDeps) {
       const fetchedAt = new Date(deps.now()).toISOString();
       try {
         const status = await deps.github(github);
-        for (const id of github) rows.set(id, githubRowFromStatus(status[id], fetchedAt));
+        for (const id of github) plain(id, githubRowFromStatus(status[id], fetchedAt));
       } catch {
         for (const id of github) {
-          rows.set(id, unavailable("github", "providerUnavailable", "GitHub PR Status isn't available, so this branch's pull request can't be read here."));
+          plain(id, unavailable("github", "providerUnavailable", "GitHub PR Status isn't available, so this branch's pull request can't be read here."));
         }
       }
     }
@@ -295,16 +334,20 @@ export function createDiscovery(deps: DiscoveryDeps) {
       else missing.push(id);
     }
     if (missing.length > 0) {
+      const startEpoch = epoch;
+      const claims = new Map(missing.map((id) => [id, ++tickets] as const));
+      for (const [id, ticket] of claims) owners.set(id, ticket);
       const batch = load(missing);
       for (const id of missing) {
-        const one = batch.then((rows) => rows.get(id)!);
+        const resolved = batch.then((rows) => rows.get(id)!);
+        const one = resolved.then((entry) => entry.row);
         inflight.set(id, one);
         waiting.push(
-          one.then(
-            (row) => {
+          resolved.then(
+            (entry) => {
               if (inflight.get(id) === one) inflight.delete(id);
-              remember(id, row);
-              result[id] = row;
+              if (epoch === startEpoch && owners.get(id) === claims.get(id)) remember(id, entry);
+              result[id] = entry.row;
             },
             () => {
               if (inflight.get(id) === one) inflight.delete(id);
@@ -320,10 +363,14 @@ export function createDiscovery(deps: DiscoveryDeps) {
 
   function forget(environmentId: string) {
     cache.delete(environmentId);
+    inflight.delete(environmentId);
+    owners.set(environmentId, ++tickets);
   }
 
   function clear() {
+    epoch += 1;
     cache.clear();
+    inflight.clear();
     rateLimitedUntil.clear();
   }
 

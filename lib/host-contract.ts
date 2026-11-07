@@ -16,7 +16,18 @@ export const GITLAB_HOSTNAME_RE = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::\d
 export const GITLAB_API_PATH_RE =
   /^projects\/[A-Za-z0-9%._-]{1,600}\/merge_requests(?:\/[1-9]\d{0,9})?(?:\?[A-Za-z0-9_.%=&-]{0,400})?$/;
 
-const remoteSchema = z.object({ name: z.string(), url: z.string() });
+const remoteSchema = z.object({
+  name: z.string(),
+  remote: z
+    .object({
+      scheme: z.enum(["https", "http", "ssh", "git", "scp"]),
+      host: z.string(),
+      port: z.number().int().nullable(),
+      path: z.string(),
+    })
+    .strict()
+    .nullable(),
+});
 
 export const inspectResultSchema = z.discriminatedUnion("ok", [
   z.object({

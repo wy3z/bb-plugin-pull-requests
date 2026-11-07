@@ -87,11 +87,18 @@ without the GitLab MR Status plugin:
   config. Without glab, or signed out, the MR shows a setup message, not a
   fake mark.
 - gitlab.com works as is. Add self-hosted instances in the plugin's settings
-  ("Self-hosted GitLab instances"): `git.example.com`, or
-  `alias=https://git.example.com/prefix` for an SSH alias or a path install.
-  Other hosts are never guessed from their name.
-- Only a same-project MR for the branch is shown. Two open MRs for one branch
-  are reported as ambiguous instead of picking one.
+  ("Self-hosted GitLab instances"): `git.example.com` (HTTPS and SSH remotes on
+  that host), `git.example.com:8443` (HTTPS on that port only), or
+  `alias=https://git.example.com` for an SSH host alias. HTTPS remotes must
+  match the host and port exactly; two instances can't claim one SSH alias.
+  GitLab installed under a path (`https://host/gitlab`) is reported as not
+  supported yet. Other hosts are never guessed from their name.
+- Only an open same-project MR for the branch is shown. Two open MRs for one
+  branch are reported as ambiguous, and a branch with more open MRs than BB
+  reads is reported as incomplete. Merged or closed MRs that only share the
+  branch name aren't shown until BB can prove they belong to the checkout.
+- Remote URLs never leave the machine: the host returns only the parsed host,
+  port and project path, with no credentials, query or fragment.
 
 `changeRequests` (keyed by environment id, contract in
 `@wy3z/bb-suite/change-requests`) serves GitHub and GitLab to other plugins;

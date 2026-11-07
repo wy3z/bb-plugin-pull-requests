@@ -65,8 +65,8 @@ describe("inspecting a checkout on the host", () => {
     expect(result).toMatchObject({ ok: true, branch: "main", upstream: { remote: "origin", branch: "main" }, pushRemote: null });
     expect(result.ok && result.head).toMatch(/^[0-9a-f]{40}$/);
     expect(result.ok && result.remotes).toEqual([
-      { name: "fork", url: "git@gitlab.com:me/project.git" },
-      { name: "origin", url: "https://gitlab.com/group/sub/project.git" },
+      { name: "fork", remote: { scheme: "scp", host: "gitlab.com", port: null, path: "me/project" } },
+      { name: "origin", remote: { scheme: "https", host: "gitlab.com", port: null, path: "group/sub/project" } },
     ]);
     expect(JSON.stringify(result)).not.toContain("SECRET");
   });
@@ -87,6 +87,20 @@ describe("inspecting a checkout on the host", () => {
     expect(await inspectCheckout(isolatedGit, neutral)).toEqual({ ok: false, path: neutral, error: "notGit" });
     const noGit: Runner = (command, args, options) => runProcess(command, args, { ...options, env: { ...options.env, PATH: fakeBin } });
     expect(await inspectCheckout(noGit, repo)).toEqual({ ok: false, path: repo, error: "gitMissing" });
+  });
+});
+
+describe("remote redaction", () => {
+  it("returns no userinfo, query or fragment from any remote", async () => {
+    const leaky = join(root, "leaky");
+    mkdirSync(leaky);
+    git(leaky, "init", "-q", "-b", "main");
+    git(leaky, "remote", "add", "origin", "https://user:PASSWORD_SENTINEL@gitlab.com/g/p.git?private_token=QUERY_SENTINEL#FRAGMENT_SENTINEL");
+    git(leaky, "remote", "add", "ssh", "ssh://git:SSH_SENTINEL@gitlab.com/g/p.git?token=SSH_QUERY_SENTINEL");
+    git(leaky, "remote", "add", "scp", "git@gitlab.com:g/p.git?private_token=SCP_SENTINEL");
+    const text = JSON.stringify(await inspectCheckout(isolatedGit, leaky));
+    expect(text).not.toMatch(/SENTINEL/);
+    expect(text).toContain("gitlab.com");
   });
 });
 

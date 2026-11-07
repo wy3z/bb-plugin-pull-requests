@@ -2,6 +2,7 @@ import type { ChangeRequest, ChangeRequestRow, ChangeRequestState, ChangeRequest
 import {
   gitlabIdentity,
   gitlabProjectApiPath,
+  hasUnverifiedHistory,
   mergeRequestCandidate,
   mergeRequestState,
   pickSameProjectMergeRequest,
@@ -127,24 +128,42 @@ export interface DiscoverInput {
   now?: () => Date;
 }
 
+function provenanceMismatch(instance: GitLabInstance, iid: number): GitLabUnavailable {
+  return {
+    outcome: "unavailable",
+    provider: "gitlab",
+    reason: "unknown",
+    message: `GitLab answered for !${iid} with a URL outside ${instance.base}. Check the GitLab instance in Pull Requests settings.`,
+  };
+}
+
 export async function discoverMergeRequest(transport: GitLabTransport, input: DiscoverInput): Promise<ChangeRequestRow> {
   const context = { instance: input.instance, machine: input.machine };
   const project = gitlabProjectApiPath(input.projectPath);
-  const candidates: MergeRequestCandidate[] = [];
+  const branch = encodeQueryValue(input.branch);
+  const open: MergeRequestCandidate[] = [];
   let page: number | null = 1;
-  for (let read = 0; page !== null && read < MAX_PAGES; read++) {
-    const query = `source_branch=${encodeQueryValue(input.branch)}&state=all&scope=all&order_by=updated_at&sort=desc&per_page=${PER_PAGE}&page=${page}`;
-    const response = await transport.get(`${project}/merge_requests?${query}`);
+  for (let read = 0; page !== null; read++) {
+    if (read === MAX_PAGES) {
+      return {
+        outcome: "unavailable",
+        provider: "gitlab",
+        reason: "incomplete",
+        message: `More than ${MAX_PAGES * PER_PAGE} open merge requests match the branch ${input.branch}, so BB can't tell which one is this branch's.`,
+      };
+    }
+    const response = await transport.get(
+      `${project}/merge_requests?source_branch=${branch}&state=opened&order_by=updated_at&sort=desc&per_page=${PER_PAGE}&page=${page}`,
+    );
     if (!response.ok) return unavailableFor(response.failure, context);
     if (!Array.isArray(response.body)) return unavailableFor("network", context);
     for (const raw of response.body) {
       const candidate = mergeRequestCandidate(raw);
-      if (candidate) candidates.push(candidate);
+      if (candidate) open.push(candidate);
     }
     page = response.nextPage;
   }
-  const pick = pickSameProjectMergeRequest(candidates, input.branch);
-  if (pick.kind === "none") return { outcome: "absent", provider: "gitlab" };
+  const pick = pickSameProjectMergeRequest(open, input.branch);
   if (pick.kind === "ambiguous") {
     return {
       outcome: "unavailable",
@@ -154,8 +173,23 @@ export async function discoverMergeRequest(transport: GitLabTransport, input: Di
       message: `${pick.count} open merge requests use the branch ${input.branch}. Open the one you mean from GitLab.`,
     };
   }
+  if (pick.kind === "none") {
+    const history = await transport.get(`${project}/merge_requests?source_branch=${branch}&state=all&order_by=updated_at&sort=desc&per_page=20&page=1`);
+    if (!history.ok) return unavailableFor(history.failure, context);
+    const past = Array.isArray(history.body) ? history.body.flatMap((raw) => mergeRequestCandidate(raw) ?? []) : [];
+    if (hasUnverifiedHistory(past, input.branch)) {
+      return {
+        outcome: "unavailable",
+        provider: "gitlab",
+        reason: "unverified",
+        message: `Only merged or closed merge requests use the branch ${input.branch}. They aren't shown because BB can't yet prove they belong to this checkout.`,
+      };
+    }
+    return { outcome: "absent", provider: "gitlab" };
+  }
   const chosen = pick.mergeRequest;
-  const identity = gitlabIdentity(input.instance, input.projectPath, chosen);
+  const identity = gitlabIdentity(input.instance, chosen);
+  if (identity === null) return provenanceMismatch(input.instance, chosen.iid);
   const detail = await transport.get(`${gitlabProjectApiPath(chosen.projectId)}/merge_requests/${chosen.iid}`);
   let ci: ChangeRequestCiState = "unknown";
   let state: ChangeRequestState = chosen.state;
@@ -241,7 +275,8 @@ export async function readMergeRequest(
   if (candidate === null || state === null || candidate.iid !== identity.number) {
     return { ok: false, reason: "network", message: `${instance.hostname} returned a merge request this plugin couldn't read.` };
   }
-  const resolved = gitlabIdentity(instance, identity.projectPath, candidate);
+  const resolved = gitlabIdentity(instance, candidate);
+  if (resolved === null) return { ok: false, reason: "unknown", message: provenanceMismatch(instance, candidate.iid).message };
   const pipeline = body.head_pipeline as Record<string, unknown> | null | undefined;
   return {
     ok: true,

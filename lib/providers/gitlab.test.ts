@@ -111,7 +111,7 @@ describe("discovering a branch's merge request", () => {
       },
     });
     expect(calls[0]).toContain("source_branch=feature%2Fx");
-    expect(calls[0]).toContain("state=all");
+    expect(calls[0]).toContain("state=opened");
   });
 
   it("keeps a draft's failed pipeline", async () => {
@@ -125,11 +125,40 @@ describe("discovering a branch's merge request", () => {
   it("reads every page before deciding", async () => {
     const { transport, calls } = fakeGitLab({
       "projects/group%2Fsub%2Fproject/merge_requests?": (path) =>
-        path.includes("page=1") && !path.includes("page=1&") ? ok([mr({ iid: 1, state: "merged" })], 2) : ok([mr({ iid: 2, state: "merged" })], 2),
-      "projects/77/merge_requests/": ok({ ...mr({ iid: 1, state: "merged" }), head_pipeline: null }),
+        /[?&]page=1(&|$)/.test(path) ? ok([mr({ iid: 1 })], 2) : ok([mr({ iid: 2 })], null),
     });
-    await discoverMergeRequest(transport, base);
-    expect(calls.filter((call) => call.includes("?")).length).toBe(5);
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "unavailable", reason: "ambiguous", candidates: 2 });
+    expect(calls.filter((call) => call.includes("?"))).toHaveLength(2);
+  });
+
+  it("never chooses from a truncated candidate list", async () => {
+    const { transport } = fakeGitLab({
+      "projects/group%2Fsub%2Fproject/merge_requests?": (path) => {
+        const page = Number(/[?&]page=(\d+)/.exec(path)![1]);
+        if (page === 1) return ok([mr({ iid: 1 })], 2);
+        if (page < 6) return ok([], page + 1);
+        return ok([mr({ iid: 2 })], null);
+      },
+      "projects/77/merge_requests/": ok({ ...mr({ iid: 1 }), head_pipeline: null }),
+    });
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "unavailable" });
+  });
+
+  it("withholds a merged or closed MR that only shares the branch name", async () => {
+    const { transport } = fakeGitLab({
+      "projects/group%2Fsub%2Fproject/merge_requests?": (path) => (/state=opened/.test(path) ? ok([]) : ok([mr({ iid: 4, state: "merged" })])),
+      "projects/77/merge_requests/4": ok({ ...mr({ iid: 4, state: "merged" }), head_pipeline: null }),
+    });
+    const row = await discoverMergeRequest(transport, base);
+    expect(row.outcome).not.toBe("available");
+  });
+
+  it("refuses an MR whose web_url is on another instance instead of inventing a URL", async () => {
+    const { transport } = fakeGitLab({
+      "projects/group%2Fsub%2Fproject/merge_requests?": ok([mr({ web_url: "https://other.example/group/sub/project/-/merge_requests/12" })]),
+      "projects/77/merge_requests/12": ok({ ...mr({ web_url: "https://other.example/group/sub/project/-/merge_requests/12" }), head_pipeline: null }),
+    });
+    expect((await discoverMergeRequest(transport, base)).outcome).toBe("unavailable");
   });
 
   it("encodes every branch character the host allowlist would refuse", async () => {

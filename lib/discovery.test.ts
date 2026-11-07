@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseGitLabInstances } from "./change-request";
+import { parseGitLabInstances, parseRemoteUrl } from "./change-request";
 import { createDiscovery, githubRowFromStatus, type DiscoveryDeps, type DiscoveryEnvironment } from "./discovery";
 import type { GitLabHttp, InspectResult } from "./host-contract";
 
 const SHA = "c".repeat(40);
 
 function checkout(path: string, url: string, branch: string | null = "feature"): InspectResult {
-  return { ok: true, path, branch, head: SHA, upstream: branch ? { remote: "origin", branch } : null, pushRemote: null, remotes: [{ name: "origin", url }] };
+  return { ok: true, path, branch, head: SHA, upstream: branch ? { remote: "origin", branch } : null, pushRemote: null, remotes: [{ name: "origin", remote: parseRemoteUrl(url) }] };
 }
 
 const githubStatus = {
@@ -186,6 +186,67 @@ describe("discovery outcomes", () => {
     advance(5 * 60_000);
     await discovery.read(["gl"], true);
     expect(calls.gitlab.length).toBeGreaterThan(before);
+  });
+
+  it("never lets an older lookup overwrite a newer branch's result", async () => {
+    let branch = "old";
+    let releaseOld!: () => void;
+    const oldGate = new Promise<void>((resolve) => (releaseOld = resolve));
+    let oldStarted!: () => void;
+    const started = new Promise<void>((resolve) => (oldStarted = resolve));
+    const listed = (name: string, iid: number) => ({ iid, project_id: 5, source_project_id: 5, target_project_id: 5, source_branch: name, target_branch: "main", state: "opened", title: name, web_url: `https://gitlab.com/group/sub/project/-/merge_requests/${iid}`, sha: SHA, updated_at: "2026-11-06T00:00:00Z" });
+    const { discovery } = harness({
+      inspect: async (_hostId, paths) => paths.map((path) => checkout(path, "git@gitlab.com:group/sub/project.git", branch)),
+      gitlab: async (_hostId, _hostname, path) => {
+        const name = branch;
+        const iid = name === "old" ? 1 : 2;
+        if (name === "old" && path.includes("?")) {
+          oldStarted();
+          await oldGate;
+        }
+        return { ok: true, status: 200, nextPage: null, body: path.includes("?") ? [listed(name, iid)] : { ...listed(name, iid), head_pipeline: null } };
+      },
+    });
+    const stale = discovery.read(["gl"]);
+    await started;
+    discovery.forget("gl");
+    branch = "new";
+    expect((await discovery.read(["gl"], true)).gl).toMatchObject({ changeRequest: { identity: { number: 2 } } });
+    releaseOld();
+    await stale;
+    expect((await discovery.read(["gl"])).gl).toMatchObject({ changeRequest: { identity: { number: 2 } } });
+  });
+
+  it("does not reuse a cached MR during rate-limit backoff once the branch changed", async () => {
+    let branch = "feature";
+    const { discovery } = harness({
+      environments: {
+        gl: { id: "gl", hostId: "h1", path: "/w/gl", status: "ready", isGitRepo: true },
+        busy: { id: "busy", hostId: "h1", path: "/w/busy", status: "ready", isGitRepo: true },
+      },
+      inspect: async (_hostId, paths) =>
+        paths.map((path) => checkout(path, "git@gitlab.com:group/sub/project.git", path === "/w/busy" ? "busy" : branch)),
+      gitlab: async (_hostId, _hostname, path) => {
+        if (path.includes("source_branch=busy")) return { ok: false, failure: "rateLimited", status: 429 };
+        const mr = { iid: 1, project_id: 5, source_project_id: 5, target_project_id: 5, source_branch: "feature", target_branch: "main", state: "opened", title: "MR", web_url: "https://gitlab.com/group/sub/project/-/merge_requests/1", sha: SHA, updated_at: "2026-11-06T00:00:00Z" };
+        return { ok: true, status: 200, nextPage: null, body: path.includes("?") ? (path.includes("source_branch=feature") ? [mr] : []) : { ...mr, head_pipeline: null } };
+      },
+    });
+    expect((await discovery.read(["gl"])).gl).toMatchObject({ outcome: "available" });
+    expect((await discovery.read(["busy"])).busy).toMatchObject({ reason: "rateLimited" });
+    branch = "other";
+    expect((await discovery.read(["gl"], true)).gl).toMatchObject({ outcome: "unavailable", provider: "gitlab", reason: "rateLimited" });
+  });
+
+  it("does not query a GitLab installed under a path prefix", async () => {
+    const instances = parseGitLabInstances("corp=https://code.corp.example/gitlab").instances;
+    const { discovery, calls } = harness({
+      instances: () => instances,
+      environments: { lab: { id: "lab", hostId: "h1", path: "/srv/lab", status: "ready", isGitRepo: true } },
+      checkouts: { "/srv/lab": checkout("/srv/lab", "https://code.corp.example/gitlab/platform/cli.git") },
+    });
+    expect((await discovery.read(["lab"])).lab).toMatchObject({ outcome: "unavailable", reason: "unsupportedHost" });
+    expect(calls.gitlab).toEqual([]);
   });
 
   it("does not crash the batch when a host call throws", async () => {
