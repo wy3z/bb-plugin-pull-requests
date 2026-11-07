@@ -6,7 +6,7 @@ Zeron (zeronsh, MIT, v0.2.132), rebuilt on BB's plugin SDK.
 
 ## Requirements
 
-- bb >= 0.48.1.
+- bb >= 0.49.
 - `gh` on the BB server's machine, signed in to github.com (`gh auth login`).
   The active account is the one used: run `gh auth switch` to change it.
 
