@@ -46,8 +46,8 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
 - **Subscriptions** (moved here from the Subscriptions plugin, GitHub only):
   a thread can follow pull requests and gets one `[Subscription update]`
   message when they change (state, commits, reviews, comments, checks, labels,
-  assignees). Subscribe from the **Subscribe** button in the pull request
-  viewer's side-panel tab, `bb pull-requests subscribe|unsubscribe <pr…>`,
+  assignees). Subscribe from **Subscribe** in the pull request
+  viewer's **...** menu, `bb pull-requests subscribe|unsubscribe <pr…>`,
   `bb pull-requests subscriptions`, or the `pull_request_subscriptions` agent
   tool. A "Listening N" chip above the composer opens a tray of what the
   thread follows; a row opens the pull request, hover swaps the last-check
@@ -64,6 +64,13 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
 - **Tabs** read "PR #N", as in Cursor, and the icon takes the lifecycle
   colour (open, draft, merged, closed). Tab titles are plain text, so the
   title ends in an invisible marker that `app.css` matches.
+- **From other plugins.** Dispatch a cancelable, bubbling
+  `bb-pull-requests:open` `CustomEvent` with `detail: { url }` from the
+  clicked element (see `components/pr/open-event.ts`). When the element sits
+  in a thread view, the pull request opens in that thread's side panel and the
+  event is cancelled; `dispatchEvent` returning `true` means this plugin is not
+  installed or there is no thread panel, so open the URL yourself. Projects
+  uses this for its PR chips.
 - **Agents** learn both from `skills/pull-requests/SKILL.md`.
 
 ## GitHub ownership and the old subscriptions

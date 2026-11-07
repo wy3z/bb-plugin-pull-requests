@@ -17,6 +17,7 @@ import { LIFECYCLE, lifecycle } from "@/lib/status";
 import type { PullRequestSummary } from "../../server";
 import { Avatar } from "./common";
 import { isPullRequestUrl, openInThreadPanel, useSummaries } from "./pills";
+import { OPEN_PULL_REQUEST_EVENT, openPullRequestUrl } from "./open-event";
 
 const PR_PATH_RE = /^https:\/\/github\.com\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\/pull\/([1-9]\d*)\/?(?:[?#].*)?$/;
 
@@ -298,6 +299,21 @@ export function PullRequestLinkDecorator() {
     };
     window.addEventListener("click", intercept, true);
     return () => window.removeEventListener("click", intercept, true);
+  }, []);
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const pr = pullRequestHref(openPullRequestUrl((event as CustomEvent<unknown>).detail) ?? "");
+      const source = event.target instanceof Element ? event.target : null;
+      const threadId = source ? threadIdFor(source) : null;
+      if (!pr || threadId === null) return;
+      const opened = openInThreadPanel(threadId, pr.url, latest.current.summaries.get(pr.url), () =>
+        latest.current.navigate.openUrl(pr.url),
+      );
+      if (opened) event.preventDefault();
+    };
+    window.addEventListener(OPEN_PULL_REQUEST_EVENT, open);
+    return () => window.removeEventListener(OPEN_PULL_REQUEST_EVENT, open);
   }, []);
 
   // Hover listeners live on anchors React doesn't own, so attach them by hand.
