@@ -16,8 +16,10 @@ import { compactRelativeTime } from "@/lib/model";
 import { LIFECYCLE, lifecycle } from "@/lib/status";
 import type { PullRequestSummary } from "../../server";
 import { Avatar } from "./common";
-import { isPullRequestUrl, openInThreadPanel, useSummaries } from "./pills";
+import { isPullRequestUrl, openInThreadPanel, openMergeRequestInThreadPanel, useSummaries } from "./pills";
 import { OPEN_PULL_REQUEST_EVENT, openPullRequestUrl } from "./open-event";
+import { gitlabTabParams, mergeRequestPagePath } from "./change-request";
+import { openChangeRequestDetail } from "@wy3z/bb-suite/change-requests";
 
 const PR_PATH_RE = /^https:\/\/github\.com\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\/pull\/([1-9]\d*)\/?(?:[?#].*)?$/;
 
@@ -303,8 +305,19 @@ export function PullRequestLinkDecorator() {
 
   useEffect(() => {
     const open = (event: Event) => {
-      const pr = pullRequestHref(openPullRequestUrl((event as CustomEvent<unknown>).detail) ?? "");
-      if (!pr) return;
+      const raw = (event as CustomEvent<unknown>).detail;
+      const pr = pullRequestHref(openPullRequestUrl(raw) ?? "");
+      if (!pr) {
+        const request = openChangeRequestDetail(raw);
+        const gitlab = request?.connection ? gitlabTabParams(request.url, request.connection) : null;
+        if (!request || !gitlab) return;
+        event.preventDefault();
+        const source = event.target instanceof Element ? event.target : null;
+        const threadId = request.threadId ?? (source ? threadIdFor(source) : null);
+        const openPage = () => latest.current.navigate.toPluginPanel("pull-requests", { subPath: mergeRequestPagePath(gitlab) });
+        if (threadId === null || !openMergeRequestInThreadPanel(threadId, gitlab, openPage)) openPage();
+        return;
+      }
       event.preventDefault();
       const source = event.target instanceof Element ? event.target : null;
       const threadId = source ? threadIdFor(source) : null;

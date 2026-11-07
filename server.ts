@@ -27,7 +27,22 @@ import {
 } from "./lib/model";
 import { createSubscriptions, shortId, type SubscriptionView } from "./lib/subscriptions";
 import { gitActionsContract } from "@wy3z/bb-suite/contracts";
+import {
+  changeRequestsContract,
+  environmentChangeRequestTag,
+  type ChangeRequestRow,
+} from "@wy3z/bb-suite/change-requests";
 import { applyLocally, commit, createPullRequest, pushBranch } from "./lib/git-actions";
+import {
+  knownGitLabInstances,
+  parseChangeRequestUrl,
+  parseGitLabInstances,
+  parseGlabConnection,
+  type GitLabInstance,
+} from "./lib/change-request";
+import { hostContract } from "./lib/host-contract";
+import { createDiscovery } from "./lib/discovery";
+import { readMergeRequest, type MergeRequestDetailResult } from "./lib/providers/gitlab";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -850,6 +865,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1).max(100), url: urlSchema }),
     output: z.custom<{ urls: string[] }>(),
   },
+  change_request_detail: {
+    input: z.object({ url: z.string().min(1).max(500), connection: z.string().min(1).max(200), refresh: z.boolean() }),
+    output: z.custom<MergeRequestDetailResult>(),
+  },
   subscriptions_list: {
     input: z.object({ threadId: z.string().min(1).max(100) }),
     output: z.custom<{ subscriptions: SubscriptionView[]; intervalSeconds: number }>(),
@@ -923,6 +942,8 @@ export default async function plugin(bb: BbPluginApi) {
       return new Map();
     }
   }
+
+  const changeRequests = registerChangeRequests(bb);
 
   bb.rpc.register(gitActionsContract, {
     gitCommit: (input) => commit(bb, input),
@@ -1058,6 +1079,7 @@ export default async function plugin(bb: BbPluginApi) {
     linked_list: async ({ threadId }) => ({ urls: await readLinks(threadId) }),
     link: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "link") }),
     unlink: async ({ threadId, url }) => ({ urls: await changeLinks(threadId, url, "unlink") }),
+    change_request_detail: ({ url, connection, refresh }) => changeRequests.detail(url, connection, refresh),
     subscriptions_list: ({ threadId }) => subscriptions.list(threadId),
     subscribe: ({ threadId, urls }) => subscriptions.mutate(threadId, urls, true),
     unsubscribe: ({ threadId, urls }) => subscriptions.mutate(threadId, urls, false),
@@ -1258,4 +1280,209 @@ export default async function plugin(bb: BbPluginApi) {
   );
 
   bb.log.info("loaded");
+}
+
+const githubStatusOutput = z.record(z.string(), z.unknown());
+const POLL_MS = 60_000;
+const DETAIL_FRESH_MS = 60_000;
+
+function errorStatus(error: unknown): number | null {
+  const value = error as { status?: unknown; code?: unknown } | null;
+  if (typeof value?.status === "number") return value.status;
+  return value?.code === "not_found" ? 404 : null;
+}
+
+function registerChangeRequests(bb: BbPluginApi) {
+  const settings = bb.settings.define({
+    gitlabInstances: {
+      type: "string",
+      label: "Self-hosted GitLab instances",
+      description:
+        "gitlab.com works without this. List other GitLab hosts, separated by commas or spaces: git.example.com, or alias=https://git.example.com/prefix for an SSH alias or an install under a path. Merge requests are read through glab on each environment's machine.",
+      default: "",
+      experimental_multiline: true,
+    },
+  });
+  let configured: GitLabInstance[] = [];
+  const applySettings = (value: string | undefined) => {
+    const parsed = parseGitLabInstances(value ?? "");
+    configured = parsed.instances;
+    if (parsed.invalid.length > 0) bb.log.warn(`Ignoring ${parsed.invalid.length} GitLab instance entr${parsed.invalid.length === 1 ? "y" : "ies"} that aren't https hosts`);
+  };
+  const ready = settings.get().then(
+    (values) => applySettings(values.gitlabInstances),
+    () => applySettings(""),
+  );
+  const host = bb.hosts.experimental_client({ contract: hostContract });
+
+  const discovery = createDiscovery({
+    environment: async (environmentId) => {
+      try {
+        return await bb.sdk.environments.get({ environmentId, signal: AbortSignal.timeout(10_000) });
+      } catch (error) {
+        if (errorStatus(error) === 404) return null;
+        throw error;
+      }
+    },
+    host: async (hostId) => {
+      try {
+        const value = await bb.sdk.hosts.get({ hostId });
+        return { name: value.name, connected: value.status === "connected" && value.lifecycle.phase === "active" };
+      } catch (error) {
+        if (errorStatus(error) === 404) return null;
+        throw error;
+      }
+    },
+    inspect: async (hostId, paths) => (await host.call("inspect", { paths }, { hostId, timeoutMs: 30_000 })).results,
+    gitlab: (hostId, hostname, path) => host.call("gitlabGet", { hostname, path }, { hostId, timeoutMs: 30_000 }),
+    github: (keys) =>
+      bb.sdk.plugins.callRpc({
+        pluginId: "bb--github-pr-status",
+        method: "pullRequests",
+        input: { keys },
+        outputSchema: githubStatusOutput,
+        signal: AbortSignal.timeout(20_000),
+      }),
+    instances: () => configured,
+    now: () => Date.now(),
+  });
+
+  const watched = new Map<string, number>();
+  const published = new Map<string, string>();
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let disposed = false;
+
+  async function recheck(keys: string[]) {
+    if (disposed || keys.length === 0) return;
+    let rows: Record<string, ChangeRequestRow>;
+    try {
+      rows = await discovery.read(keys, true);
+    } catch (error) {
+      bb.log.debug(`Change request recheck failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const changed: string[] = [];
+    for (const key of keys) {
+      const next = JSON.stringify(rows[key] ?? null);
+      if (published.has(key) && published.get(key) !== next) changed.push(environmentChangeRequestTag(key));
+      published.set(key, next);
+    }
+    if (!disposed && changed.length > 0) bb.rpc.experimental_invalidate(changed);
+  }
+
+  const pending = new Set<string>();
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  function soon(key: string) {
+    pending.add(key);
+    pendingTimer ??= setTimeout(() => {
+      pendingTimer = null;
+      const keys = [...pending];
+      pending.clear();
+      void recheck(keys);
+    }, 2_000);
+  }
+
+  bb.rpc.register(changeRequestsContract, {
+    changeRequests: async ({ keys }) => {
+      await ready;
+      const rows = await discovery.read(keys);
+      for (const key of keys) if (watched.has(key) && rows[key]) published.set(key, JSON.stringify(rows[key]));
+      return rows;
+    },
+  });
+  bb.rpc.experimental_whileWatched("changeRequests", (read, signal) => {
+    if (!("key" in read)) return;
+    const key = read.key;
+    watched.set(key, (watched.get(key) ?? 0) + 1);
+    timer ??= setInterval(() => void recheck([...watched.keys()]), POLL_MS);
+    unsubscribe ??= bb.sdk.subscribe({
+      event: "environment:changed",
+      callback: (event) => {
+        const id = (event as { id?: unknown }).id;
+        if (typeof id !== "string") return;
+        discovery.forget(id);
+        if (watched.has(id)) soon(id);
+      },
+    });
+    signal.addEventListener(
+      "abort",
+      () => {
+        const count = (watched.get(key) ?? 1) - 1;
+        if (count > 0) watched.set(key, count);
+        else {
+          watched.delete(key);
+          published.delete(key);
+        }
+        if (watched.size === 0) {
+          if (timer !== null) clearInterval(timer);
+          timer = null;
+          unsubscribe?.();
+          unsubscribe = null;
+        }
+      },
+      { once: true },
+    );
+  });
+  bb.events.on("experimental_environment.removed", ({ removal }) => {
+    discovery.forget(removal.environmentId);
+    published.delete(removal.environmentId);
+  });
+  settings.onChange((next) => {
+    applySettings(next.gitlabInstances);
+    discovery.clear();
+    details.clear();
+    void recheck([...watched.keys()]);
+  });
+  bb.onDispose(() => {
+    disposed = true;
+    if (timer !== null) clearInterval(timer);
+    if (pendingTimer !== null) clearTimeout(pendingTimer);
+    unsubscribe?.();
+  });
+
+  const details = new Map<string, { at: number; value: MergeRequestDetailResult }>();
+  async function detail(url: string, connection: string, refresh: boolean): Promise<MergeRequestDetailResult> {
+    await ready;
+    const identity = parseChangeRequestUrl(url, configured);
+    const access = parseGlabConnection(connection);
+    if (identity === null || identity.provider !== "gitlab") {
+      return { ok: false, reason: "unsupportedHost", message: "That isn't a merge request on gitlab.com or a GitLab instance listed in Pull Requests settings." };
+    }
+    if (access === null) {
+      return { ok: false, reason: "unknown", message: "This merge request link doesn't say which machine's glab login to use. Open it from the sidebar." };
+    }
+    const instance = knownGitLabInstances(configured).find((candidate) => candidate.base === identity.instance)!;
+    const key = `${identity.url}\n${access.hostId}`;
+    const cached = details.get(key);
+    if (!refresh && cached && Date.now() - cached.at < DETAIL_FRESH_MS) return cached.value;
+    let machine: { name: string; status: string; lifecycle: { phase: string } };
+    try {
+      machine = await bb.sdk.hosts.get({ hostId: access.hostId });
+    } catch {
+      return { ok: false, reason: "hostOffline", message: "The machine this merge request was found on isn't enrolled in BB any more." };
+    }
+    if (machine.status !== "connected" || machine.lifecycle.phase !== "active") {
+      return { ok: false, reason: "hostOffline", message: `${machine.name} is offline. Start it to read this merge request through its glab login.` };
+    }
+    let value: MergeRequestDetailResult;
+    try {
+      value = await readMergeRequest(
+        { get: (path) => host.call("gitlabGet", { hostname: instance.hostname, path }, { hostId: access.hostId, timeoutMs: 30_000 }) },
+        instance,
+        identity,
+        machine.name,
+      );
+    } catch {
+      return { ok: false, reason: "hostOffline", message: `BB couldn't reach ${machine.name} to run glab.` };
+    }
+    if (value.ok) {
+      details.delete(key);
+      details.set(key, { at: Date.now(), value });
+      while (details.size > 100) details.delete(details.keys().next().value as string);
+    }
+    return value;
+  }
+
+  return { detail };
 }

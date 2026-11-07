@@ -74,6 +74,32 @@ its custom code viewer (BB's `experimental_Diff` is used instead), comment
   PR chips.
 - **Agents** learn both from `skills/pull-requests/SKILL.md`.
 
+## GitLab merge requests (read-only)
+
+A thread's branch can have a GitLab merge request. Pull Requests finds it
+without the GitLab MR Status plugin:
+
+- It reads the checkout's branch, upstream and remotes on the environment's own
+  machine (the plugin's `host.ts`), so linked worktrees and enrolled remote
+  hosts work. Nothing is fetched and no git config changes.
+- It asks GitLab through that machine's signed-in `glab`
+  (`glab api --hostname <host>`, GET only). It never reads glab's token or
+  config. Without glab, or signed out, the MR shows a setup message, not a
+  fake mark.
+- gitlab.com works as is. Add self-hosted instances in the plugin's settings
+  ("Self-hosted GitLab instances"): `git.example.com`, or
+  `alias=https://git.example.com/prefix` for an SSH alias or a path install.
+  Other hosts are never guessed from their name.
+- Only a same-project MR for the branch is shown. Two open MRs for one branch
+  are reported as ambiguous instead of picking one.
+
+`changeRequests` (keyed by environment id, contract in
+`@wy3z/bb-suite/change-requests`) serves GitHub and GitLab to other plugins;
+GitHub rows come from the builtin GitHub PR Status plugin. Cursor Sidebar uses
+it to show `!iid` marks, which open the MR in this plugin's pull request tab.
+The GitLab tab shows the title, state, branches, pipeline and description,
+with no merge, comment, subscription or agent actions yet.
+
 ## GitHub ownership and the old subscriptions
 
 This plugin is the only watcher and tool for GitHub pull requests. The

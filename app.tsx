@@ -23,6 +23,7 @@ import { PullRequestDirective, PullRequestLinkDecorator } from "@/components/pr/
 import { EmptyState } from "@/components/pr/common";
 import { DetailPage } from "@/components/pr/detail";
 import { ListeningSegment, useListeningVisible } from "@/components/pr/listening";
+import { MergeRequestPage, parseGitLabTabParams, parseMergeRequestPagePath } from "@/components/pr/change-request";
 
 const PANEL_PATH = "pull-requests";
 
@@ -49,6 +50,8 @@ function useStars() {
 function PullRequestsPage({ subPath }: { subPath: string }) {
   const { stars, toggle } = useStars();
   const segments = subPath.split("/").filter(Boolean).map(decodeURIComponent);
+  const mergeRequest = parseMergeRequestPagePath(segments);
+  if (mergeRequest) return <MergeRequestPage key={subPath} params={mergeRequest} />;
   if (segments[0] === "pr" && segments.length === 4) {
     const number = Number(segments[3]);
     if (Number.isInteger(number) && number > 0) {
@@ -78,8 +81,10 @@ function PullRequestTab({
   threadId?: string;
 }) {
   const { stars, toggle } = useStars();
-  const pr = parsePrTabParams(params);
+  const gitlab = parseGitLabTabParams(params);
+  const pr = gitlab ? null : parsePrTabParams(params);
   useLiveTabTitle(tab, pr);
+  if (gitlab) return <MergeRequestPage key={`${gitlab.url}\n${gitlab.connection}`} params={gitlab} layout="panel" />;
   if (pr === null) {
     return <EmptyState icon="Info" title="Nothing to show" body="Open a pull request from the board." />;
   }

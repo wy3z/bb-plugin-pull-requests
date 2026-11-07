@@ -8,12 +8,13 @@
   },
   "bb": {
     "name": "Pull Requests",
-    "description": "GitHub pull requests in BB: a board grouped by what each PR needs, with checks, diffs, conversation and agent handoffs. Uses your signed-in gh CLI. Ported from Zeron.",
+    "description": "GitHub pull requests in BB: a board grouped by what each PR needs, with checks, diffs, conversation and agent handoffs. Uses your signed-in gh CLI. GitLab merge requests for a branch are read through glab on the environment's machine.",
     "branding": {
       "icon": "GitPullRequest"
     },
     "server": "./server.ts",
     "app": "./app.tsx",
+    "host": "./host.ts",
     "skills": [
       "skills"
     ]

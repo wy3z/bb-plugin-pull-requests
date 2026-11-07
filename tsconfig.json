@@ -25,6 +25,7 @@
   },
   "include": [
     "server.ts",
+    "host.ts",
     "app.tsx",
     "assets.d.ts",
     "components",

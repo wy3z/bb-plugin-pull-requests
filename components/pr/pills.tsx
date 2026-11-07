@@ -26,6 +26,7 @@ import { isDone, lifecycle, TRAY_STATUS, trayStatus, type Lifecycle } from "@/li
 import type { PullRequestSummary, rpcContract } from "../../server";
 import { prTabParams } from "./board";
 import { lastOpenedPullRequest, openRevealed, useRevealed } from "./tab-reveal";
+import { mergeRequestTabTitle, rememberConnection, rememberedGitLabTab, type GitLabTabParams } from "./change-request";
 
 /** The side-panel tab for one pull request inside a thread. */
 export const THREAD_PR_TAB = {
@@ -629,7 +630,12 @@ export function openThreadPullRequestTab({
   experimental_panel: ReturnType<typeof experimental_useAppPanel>;
 }): void {
   const url = threadPrimary.get(threadId) ?? lastOpenedPullRequest(threadRevealKey(threadId));
-  if (!url) {
+  const gitlab = rememberedGitLabTab(url);
+  if (gitlab) {
+    panel.openTab({ tab: THREAD_PR_TAB, params: { ...gitlab }, title: mergeRequestTabTitle(gitlab.url) });
+    return;
+  }
+  if (!url || !isPullRequestUrl(url)) {
     panel.openTab({ tab: THREAD_PR_TAB });
     return;
   }
@@ -674,6 +680,24 @@ export function openInThreadPanel(
         tab: THREAD_PR_TAB,
         params: { ...params },
         title: pullRequestTabTitle(params.number, summary, `${params.owner}/${params.name}`),
+      }) ?? false,
+    onFail,
+  );
+  return true;
+}
+
+export function openMergeRequestInThreadPanel(threadId: string | null, params: GitLabTabParams, onFail: () => void): boolean {
+  const id = threadId ?? (threadPanels.size === 1 ? [...threadPanels.keys()][0]! : null);
+  if (id === null || !threadPanels.has(id)) return false;
+  rememberConnection(params.url, params.connection);
+  openRevealed(
+    threadRevealKey(id),
+    params.url,
+    () =>
+      threadPanels.get(id)?.openTab({
+        tab: THREAD_PR_TAB,
+        params: { ...params },
+        title: mergeRequestTabTitle(params.url),
       }) ?? false,
     onFail,
   );
