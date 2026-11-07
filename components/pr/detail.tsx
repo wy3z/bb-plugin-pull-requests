@@ -16,6 +16,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -32,7 +34,7 @@ import {
   type PullRequestDetail,
 } from "@/lib/model";
 import { availableHandoffs, HANDOFFS, handoffPrompt } from "@/lib/handoff";
-import { SubscribeButton } from "./listening";
+import { useSubscribeToggle } from "./listening";
 import type { DiffFile, PullRequestCommit, PullRequestError, RepositoryChoice, rpcContract } from "../../server";
 import { RepoIcon } from "@/components/project-icons/RepoIcon";
 import { Avatar, DiffStats, EmptyAction, EmptyState, ERROR_COPY, Segmented, useNow } from "./common";
@@ -199,92 +201,15 @@ function TitleEditor({ title, onRename }: { title: string; onRename: (title: str
   );
 }
 
-function MergeBox({
-  detail,
-  busy,
-  onReady,
-  onMerge,
-  onState,
-}: {
-  detail: PullRequestDetail;
-  busy: string | null;
-  onReady: () => void;
-  onMerge: (method: "merge" | "squash" | "rebase") => void;
-  onState: (state: "close" | "reopen") => void;
-}) {
-  const [method, setMethod] = useState<"merge" | "squash" | "rebase">("squash");
-  const state = detail.state.toUpperCase();
-  if (state === "MERGED") {
-    return (
-      <section className="bb-pr-merge flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-[length:var(--bbs-text-row)]">
-        <Icon name="GitMerge" className={cn("size-4", TONE_TEXT.merged)} />
-        Merged
-      </section>
-    );
-  }
-  if (state === "CLOSED") {
-    return (
-      <section className="bb-pr-merge flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-[length:var(--bbs-text-row)]">
-        <Icon name="CircleX" className={cn("size-4", TONE_TEXT.negative)} />
-        <span className="flex-1">This pull request is closed.</span>
-        <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => onState("reopen")}>
-          {busy === "reopen" ? "Reopening…" : "Reopen"}
-        </Button>
-      </section>
-    );
-  }
-  const verdict = checksVerdict(detail);
-  const line =
-    detail.mergeability === "conflicting"
-      ? { text: "This branch has conflicts that must be resolved", tone: "negative" as Tone, icon: "AlertTriangle" as IconName }
-      : verdict?.tone === "negative"
-        ? { text: "Some checks were not successful", tone: "negative" as Tone, icon: "CircleX" as IconName }
-        : verdict?.tone === "warning"
-          ? { text: "Checks are running", tone: "warning" as Tone, icon: "Clock" as IconName }
-          : verdict?.tone === "positive"
-            ? { text: "All checks have passed", tone: "positive" as Tone, icon: "CircleCheck" as IconName }
-            : { text: "No checks reported", tone: "neutral" as Tone, icon: "Circle" as IconName };
-  return (
-    <section className="bb-pr-merge overflow-hidden rounded-lg border border-border">
-      <div className="flex items-center gap-2 px-4 py-3 text-[length:var(--bbs-text-row)]">
-        <Icon name={line.icon} className={cn("size-4", TONE_TEXT[line.tone])} />
-        <span className="flex-1">{line.text}</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-        {detail.isDraft ? (
-          <Button size="sm" disabled={busy !== null} onClick={onReady}>
-            {busy === "ready" ? "Marking…" : "Mark as ready"}
-          </Button>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              disabled={busy !== null || detail.mergeability === "conflicting"}
-              onClick={() => onMerge(method)}
-            >
-              {busy === "merge" ? "Merging…" : "Merge pull request"}
-            </Button>
-            <select
-              aria-label="Merge method"
-              value={method}
-              disabled={busy !== null}
-              onChange={(event) => setMethod(event.currentTarget.value as typeof method)}
-              className="h-8 rounded-md border border-border bg-transparent px-2 text-xs text-[color:var(--bbs-text-tertiary)]"
-            >
-              <option value="squash">Squash and merge</option>
-              <option value="merge">Create a merge commit</option>
-              <option value="rebase">Rebase and merge</option>
-            </select>
-          </>
-        )}
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => onState("close")}>
-          {busy === "close" ? "Closing…" : "Close"}
-        </Button>
-      </div>
-    </section>
-  );
-}
+type MergeMethod = "merge" | "squash" | "rebase";
+
+const MERGE_METHODS: { method: MergeMethod; label: string }[] = [
+  { method: "squash", label: "Squash and merge" },
+  { method: "merge", label: "Create a merge commit" },
+  { method: "rebase", label: "Rebase and merge" },
+];
+
+type PrimaryAction = { key: string; label: string; busyLabel: string; disabled?: boolean; title?: string; run: () => void };
 
 function Commits({ url }: { url: string }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -488,123 +413,159 @@ export function DetailPage({
   const reviewCount = detail ? detail.reviews.length + (detail.reviewThreads?.length ?? 0) + detail.comments.length : undefined;
   const verdict = detail ? checksVerdict(detail) : null;
   const state = detail ? (detail.isDraft ? "DRAFT" : detail.state) : null;
+  const lifecycleState = detail?.state.toUpperCase() ?? null;
+  const isOpen = lifecycleState === "OPEN";
+  const conflicting = detail?.mergeability === "conflicting";
+  const subscription = useSubscribeToggle(threadId ?? null, url);
+
+  const merge = (method: MergeMethod) => {
+    if (!detail) return;
+    if (!window.confirm(`Merge #${number} into ${detail.baseRefName}? This happens on GitHub right away.`)) return;
+    void mutate("merge", () => rpc.call("pr_merge", { url, method }), "Merged");
+  };
+  const setState = (next: "close" | "reopen") => {
+    if (next === "close" && !window.confirm(`Close #${number} without merging?`)) return;
+    void mutate(next, () => rpc.call("pr_set_state", { url, state: next }), next === "close" ? "Closed" : "Reopened");
+  };
+
+  const primary: PrimaryAction | null = !detail
+    ? null
+    : isOpen && detail.isDraft
+      ? { key: "ready", label: "Mark as ready", busyLabel: "Marking…", run: () => void mutate("ready", () => rpc.call("pr_ready", { url }), "Marked as ready") }
+      : isOpen
+        ? {
+            key: "merge",
+            label: "Merge pull request",
+            busyLabel: "Merging…",
+            disabled: conflicting,
+            title: conflicting ? "This branch has conflicts that must be resolved" : undefined,
+            run: () => merge("squash"),
+          }
+        : lifecycleState === "CLOSED"
+          ? { key: "reopen", label: "Reopen", busyLabel: "Reopening…", run: () => setState("reopen") }
+          : null;
+  const handoffs = detail ? availableHandoffs(detail) : [];
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
       <div className={cn("mx-auto box-border w-full", inPanel ? "px-3 pb-6 pt-2" : "max-w-[860px] px-4 pb-10 pt-4 md:px-10")}>
-        <div className="flex items-center gap-1">
-          {inPanel ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-[color:var(--bbs-text-tertiary)]"
-              aria-label="Open as page"
-              onClick={() => navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })}
-            >
-              <Icon name="Maximize2" className="size-4" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 px-2 text-xs text-[color:var(--bbs-text-tertiary)]"
-              onClick={() => navigate.toPluginPanel("pull-requests", { subPath: "" })}
-            >
-              <Icon name="ArrowLeft" className="size-3.5" />
-              Pull requests
-            </Button>
-          )}
-          <div className="flex-1" />
-          <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="Copy PR URL" onClick={copyUrl}>
-            <Icon name="Link" className="size-4" />
-          </Button>
-          {threadId ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-[color:var(--bbs-text-tertiary)]"
-              aria-label="Add to Chat"
-              onClick={() => composer.insert(`${url} `, { at: "end" })}
-            >
-              <Icon name="Plus" className="size-4" />
-            </Button>
-          ) : null}
-          <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="Open on GitHub" onClick={() => navigate.openUrl(url)}>
-            <Icon name="ExternalLink" className="size-4" />
-          </Button>
-          {threadId ? <SubscribeButton threadId={threadId} url={url} /> : null}
+        <div className="bb-pr-header flex min-h-8 items-center gap-2 px-2">
+          {state ? <StatusChip raw={state} /> : null}
           {detail ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="ml-1 h-8 gap-1.5 text-xs">
-                  <Icon name="Bot" className="size-3.5" />
-                  Hand off
-                  <Icon name="ChevronDown" className="size-3 text-[color:var(--bbs-text-tertiary)]" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                {availableHandoffs(detail).map((kind) => {
-                  const handoff = HANDOFFS.find((h) => h.kind === kind)!;
-                  return (
-                    <DropdownMenuItem key={kind} onSelect={() => startHandoff(kind)}>
-                      <Icon name={handoff.icon} className="size-3.5" />
-                      <div className="flex min-w-0 flex-col">
-                        <span>{handoff.label}</span>
-                        <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{handoff.summary}</span>
-                      </div>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs text-[color:var(--bbs-text-tertiary)]">
+              <code className="truncate font-mono" title={detail.headRefName}>{detail.headRefName}</code>
+              <Icon name="ArrowRight" className="size-3 shrink-0" />
+              <code className="shrink-0 font-mono">{detail.baseRefName}</code>
+            </span>
           ) : null}
+          <div className="flex-1" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-8 text-[color:var(--bbs-text-tertiary)]" aria-label="More">
+              <Button variant="ghost" size="icon" className="size-8 shrink-0 text-[color:var(--bbs-text-tertiary)]" aria-label="More">
                 <Icon name="MoreHorizontal" className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onToggleStar(url)}>
-                <Icon name="Star" className="size-3.5" />
-                {stars.includes(starKey(url)) ? "Unstar" : "Star"}
+            <DropdownMenuContent align="end" className="w-64">
+              {inPanel ? (
+                <DropdownMenuItem onSelect={() => navigate.toPluginPanel("pull-requests", { subPath: `pr/${owner}/${name}/${number}` })}>
+                  <Icon name="Maximize2" className="size-3.5" />
+                  Open as page
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => navigate.toPluginPanel("pull-requests", { subPath: "" })}>
+                  <Icon name="ArrowLeft" className="size-3.5" />
+                  Pull requests
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => navigate.openUrl(url)}>
+                <Icon name="ExternalLink" className="size-3.5" />
+                Open on GitHub
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={copyUrl}>
+                <Icon name="Link" className="size-3.5" />
+                Copy PR URL
               </DropdownMenuItem>
               <DropdownMenuItem disabled={loading} onSelect={refresh}>
                 <Icon name="ArrowReloadHorizontal" className="size-3.5" />
                 Refresh
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {threadId ? (
+                <DropdownMenuItem onSelect={() => composer.insert(`${url} `, { at: "end" })}>
+                  <Icon name="Plus" className="size-3.5" />
+                  Add to Chat
+                </DropdownMenuItem>
+              ) : null}
+              {threadId ? (
+                <DropdownMenuItem disabled={subscription.disabled} onSelect={subscription.toggle}>
+                  <Icon name={subscription.subscribed ? "BellRing" : "Bell"} className="size-3.5" />
+                  {subscription.subscribed ? "Unsubscribe" : "Subscribe"}
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onSelect={() => onToggleStar(url)}>
+                <Icon name="Star" className="size-3.5" />
+                {stars.includes(starKey(url)) ? "Unstar" : "Star"}
+              </DropdownMenuItem>
+              {handoffs.length > 0 ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[length:var(--bbs-text-meta)] font-normal text-[color:var(--bbs-text-tertiary)]">Hand off</DropdownMenuLabel>
+                  {handoffs.map((kind) => {
+                    const handoff = HANDOFFS.find((h) => h.kind === kind)!;
+                    return (
+                      <DropdownMenuItem key={kind} onSelect={() => startHandoff(kind)}>
+                        <Icon name={handoff.icon} className="size-3.5" />
+                        <div className="flex min-w-0 flex-col">
+                          <span>{handoff.label}</span>
+                          <span className="text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{handoff.summary}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </>
+              ) : null}
+              {detail && isOpen ? (
+                <>
+                  <DropdownMenuSeparator />
+                  {!detail.isDraft
+                    ? MERGE_METHODS.map((option) => (
+                        <DropdownMenuItem key={option.method} disabled={busy !== null || conflicting} onSelect={() => merge(option.method)}>
+                          <Icon name="GitMerge" className="size-3.5" />
+                          {option.label}
+                        </DropdownMenuItem>
+                      ))
+                    : null}
+                  <DropdownMenuItem disabled={busy !== null} onSelect={() => setState("close")}>
+                    <Icon name="CircleX" className="size-3.5" />
+                    Close
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+          {primary ? (
+            <span className="shrink-0" title={primary.title}>
+              <Button size="sm" className="h-8 text-xs" disabled={busy !== null || primary.disabled} onClick={primary.run}>
+                {busy === primary.key ? primary.busyLabel : primary.label}
+              </Button>
+            </span>
+          ) : null}
         </div>
 
-        <div className="mt-3">
-          {state ? (
-            <div className="px-2">
-              <StatusChip raw={state} />
-            </div>
-          ) : null}
-          <div className="mt-2">
-            {detail ? (
-              <TitleEditor
-                title={detail.title}
-                onRename={(title) => mutate("rename", () => rpc.call("pr_rename", { url, title }), "Renamed")}
-              />
-            ) : (
-              <h1 className="px-2 text-[length:var(--bbs-text-display)] font-medium">Pull request #{number}</h1>
-            )}
-          </div>
+        <div className="mt-2">
+          {detail ? (
+            <TitleEditor
+              title={detail.title}
+              onRename={(title) => mutate("rename", () => rpc.call("pr_rename", { url, title }), "Renamed")}
+            />
+          ) : (
+            <h1 className="px-2 text-[length:var(--bbs-text-display)] font-medium">Pull request #{number}</h1>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-[color:var(--bbs-text-tertiary)]">
             {detail ? (
               <span className="flex items-center gap-1.5">
                 <Avatar login={detail.author} size={18} />
                 {detail.author || "Deleted account"}
-              </span>
-            ) : null}
-            {detail ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <code className="truncate font-mono">{detail.headRefName}</code>
-                <Icon name="ArrowRight" className="size-3" />
-                <code className="truncate font-mono">{detail.baseRefName}</code>
               </span>
             ) : null}
             <span className="flex items-center gap-1.5">
@@ -641,23 +602,8 @@ export function DetailPage({
               <div className="h-24 animate-pulse rounded-lg border border-border" />
             </div>
           ) : tab === "description" ? (
-            <div className="space-y-4">
-              <div className="px-2 text-sm">
-                {detail.body.trim() === "" ? <span className="text-[color:var(--bbs-text-tertiary)]">No description provided.</span> : <Markdown content={detail.body} />}
-              </div>
-              <MergeBox
-                detail={detail}
-                busy={busy}
-                onReady={() => void mutate("ready", () => rpc.call("pr_ready", { url }), "Marked as ready")}
-                onMerge={(method) => {
-                  if (!window.confirm(`Merge #${number} into ${detail.baseRefName}? This happens on GitHub right away.`)) return;
-                  void mutate("merge", () => rpc.call("pr_merge", { url, method }), "Merged");
-                }}
-                onState={(next) => {
-                  if (next === "close" && !window.confirm(`Close #${number} without merging?`)) return;
-                  void mutate(next, () => rpc.call("pr_set_state", { url, state: next }), next === "close" ? "Closed" : "Reopened");
-                }}
-              />
+            <div className="px-2 text-sm">
+              {detail.body.trim() === "" ? <span className="text-[color:var(--bbs-text-tertiary)]">No description provided.</span> : <Markdown content={detail.body} />}
             </div>
           ) : tab === "changes" ? (
             <Code detail={detail} diff={diff} error={diffError} onRetry={() => void loadDiff(true)} />

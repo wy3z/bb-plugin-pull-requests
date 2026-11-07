@@ -10,9 +10,7 @@ import {
   type ExperimentalThreadContextSegmentProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
 import type { rpcContract, SubscriptionView } from "../../server";
 import { prTabParams } from "./board";
 import { useOpenPullRequest } from "./pills";
@@ -73,7 +71,7 @@ function ago(now: number, at: number): string {
 /** The chip above the composer and its tray. */
 export function ListeningSegment({ threadId }: ExperimentalThreadContextSegmentProps) {
   const { items, change } = useSubscriptions(threadId);
-  const openPullRequest = useOpenPullRequest();
+  const openPullRequest = useOpenPullRequest(threadId);
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(FIRST_PAGE);
   const [busy, setBusy] = useState(false);
@@ -242,29 +240,16 @@ export function useListeningVisible({ threadId }: { threadId: string }): boolean
 }
 
 /** The viewer's toggle: follow this pull request from the thread the panel belongs to. */
-export function SubscribeButton({ threadId, url }: { threadId: string; url: string }) {
+export function useSubscribeToggle(threadId: string | null, url: string) {
   const { items, loaded, change } = useSubscriptions(threadId);
   const [busy, setBusy] = useState(false);
   const subscribed = items.some((item) => item.url.toLowerCase() === url.toLowerCase());
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className={cn("h-8 gap-1.5 text-xs", subscribed && "text-[color:var(--bbs-text-primary)]")}
-      aria-pressed={subscribed}
-      disabled={!loaded || busy}
-      onClick={() => {
-        setBusy(true);
-        change([url], !subscribed)
-          .then(() =>
-            toast(subscribed ? "Unsubscribed" : "Subscribed: this thread gets a message when the pull request changes"),
-          )
-          .catch((cause: unknown) => toast.error(cause instanceof Error ? cause.message : "Couldn’t change the subscription"))
-          .finally(() => setBusy(false));
-      }}
-    >
-      <Icon name={subscribed ? "BellRing" : "Bell"} className="size-3.5" />
-      {subscribed ? "Subscribed" : "Subscribe"}
-    </Button>
-  );
+  const toggle = () => {
+    setBusy(true);
+    change([url], !subscribed)
+      .then(() => toast(subscribed ? "Unsubscribed" : "Subscribed: this thread gets a message when the pull request changes"))
+      .catch((cause: unknown) => toast.error(cause instanceof Error ? cause.message : "Couldn’t change the subscription"))
+      .finally(() => setBusy(false));
+  };
+  return { subscribed, disabled: threadId === null || !loaded || busy, toggle };
 }
