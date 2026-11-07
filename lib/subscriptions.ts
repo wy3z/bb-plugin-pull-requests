@@ -89,6 +89,8 @@ const envelope = z.object({
 });
 
 /** "owner/repo#12" for a canonical pull request URL. */
+export const ENDED_STATES = new Set(["merged", "closed"]);
+
 export function shortId(url: string): string {
   const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(url);
   return match ? `${match[1]}/${match[2]}#${match[3]}` : url;
@@ -319,6 +321,19 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
   const rows = (threadId: string) =>
     db.prepare("SELECT * FROM subscriptions WHERE thread = ? ORDER BY url").all(threadId) as Row[];
 
+  function pruneEnded(threadId: string) {
+    const pending = db.prepare("SELECT baselines FROM pending WHERE thread=?").get(threadId) as Pick<Pending, "baselines"> | undefined;
+    const awaiting = new Set(Object.keys(pending ? (JSON.parse(pending.baselines) as Record<string, unknown>) : {}));
+    let removed = 0;
+    for (const row of rows(threadId)) {
+      if (!row.snapshot || awaiting.has(row.url)) continue;
+      const state = (JSON.parse(row.snapshot) as { state?: unknown }).state;
+      if (typeof state !== "string" || !ENDED_STATES.has(state)) continue;
+      removed += db.prepare("DELETE FROM subscriptions WHERE thread=? AND url=?").run(threadId, row.url).changes;
+    }
+    if (removed) changed(threadId);
+  }
+
   async function list(threadId: string): Promise<{ subscriptions: SubscriptionView[]; intervalSeconds: number }> {
     return {
       subscriptions: rows(threadId).map((row) => ({
@@ -424,6 +439,7 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
   const consumed = ({ entry }: { entry: { id: string; threadId: string } }) =>
     serial(async () => {
       db.prepare("DELETE FROM pending WHERE thread=? AND queued_id=?").run(entry.threadId, entry.id);
+      pruneEnded(entry.threadId);
     });
   bb.events.on("message.dispatched", consumed);
   bb.events.on("message.cancelled", consumed);
@@ -557,6 +573,7 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
         const text = compose(lines);
         if (!text) {
           db.prepare("DELETE FROM pending WHERE thread=?").run(current.thread);
+          pruneEnded(current.thread);
           return;
         }
         const input = [{ type: "text" as const, text, mentions: [] }];
@@ -582,7 +599,10 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
               sent.queuedMessage.updatedAt,
               current.thread,
             );
-          } else db.prepare("DELETE FROM pending WHERE thread=?").run(current.thread);
+          } else {
+            db.prepare("DELETE FROM pending WHERE thread=?").run(current.thread);
+            pruneEnded(current.thread);
+          }
         } catch {
           // Delivery failed (bb offline, thread gone): keep the baselines and retry on a later sweep.
           db.prepare("UPDATE pending SET flush_at=? WHERE thread=?").run(Date.now() + 5_000, current.thread);
@@ -609,6 +629,7 @@ export function createSubscriptions(bb: BbPluginApi, deps: SubscriptionsDeps) {
           row.thread,
           row.url,
         );
+        pruneEnded(row.thread);
       } catch (cause) {
         const delay = cause instanceof CheckError ? cause.retryMs : 60_000;
         const message = cause instanceof CheckError ? cause.message : "Check or message delivery failed; will retry.";
