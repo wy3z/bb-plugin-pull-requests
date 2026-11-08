@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/model";
-import { FAILURE_TITLE, refreshNotice } from "@/lib/change-request-notice";
+import { FAILURE_TITLE, refreshNotice, type ChangeRequestFailure } from "@/lib/change-request-notice";
 import type { MergeRequestDetail, MergeRequestDetailResult } from "@/lib/providers/gitlab";
 import type { rpcContract } from "../../server";
 import { EmptyAction, EmptyState, useNow } from "./common";
@@ -147,9 +147,6 @@ export function MergeRequestPage({
 
   const copyUrl = () =>
     void experimental_copyToClipboard({ text: url }).then((ok) => (ok ? toast("Copied MR URL") : toast.error("Couldn’t copy the link")));
-  const ci = detail ? CI_COPY[detail.ci] : null;
-  const ciLabel = detail === null ? "" : detail.ci === "unknown" && detail.ciReason ? `CI status unavailable (${detail.ciReason})` : CI_COPY[detail.ci].label;
-  const notice = refreshNotice(failure, detail, now);
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
@@ -199,77 +196,107 @@ export function MergeRequestPage({
           </DropdownMenu>
         </div>
 
-        <div className="mt-2">
-          <h1 className="px-2 text-[length:var(--bbs-text-display)] font-medium">{detail ? detail.title : `Merge request !${number ?? "?"}`}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-[color:var(--bbs-text-tertiary)]">
-            {detail?.author ? <span>{detail.author}</span> : null}
-            <span>
-              {detail ? `${detail.identity.projectPath}!${detail.identity.number}` : `!${number ?? "?"}`}
-            </span>
-            {detail?.updatedAt ? <span>Updated {relativeTime(detail.updatedAt, now)}</span> : null}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          {failure !== null && detail === null ? (
-            <EmptyState icon="Info" title={FAILURE_TITLE[failure.reason as keyof typeof FAILURE_TITLE] ?? "Couldn’t load this merge request"} body={failure.message}>
-              {failure.reason !== "rateLimited" ? <EmptyAction label="Try again" onClick={() => void load(true)} /> : null}
-              <EmptyAction label="Open on GitLab" onClick={() => navigate.openUrl(url)} />
-            </EmptyState>
-          ) : detail === null ? (
-            <div aria-busy className="space-y-3">
-              <div className="h-24 animate-pulse rounded-lg border border-border" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {notice !== null ? (
-                <div role="status" className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs">
-                  <div className="flex items-center gap-2 font-medium text-[var(--attention)]">
-                    <Icon name="AlertTriangle" className="size-4 shrink-0" />
-                    {notice.title}
-                  </div>
-                  <p className="mt-1 text-[color:var(--bbs-text-tertiary)]">{notice.message}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[color:var(--bbs-text-tertiary)]">
-                    <span>{notice.freshness}</span>
-                    {failure !== null && failure.reason !== "rateLimited" ? (
-                      <button type="button" className="cursor-pointer underline" disabled={loading} onClick={() => void load(true)}>
-                        Refresh
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              {ci ? (
-                <div className="flex items-center gap-2 px-2 text-[length:var(--bbs-text-row)]">
-                  <Icon name={ci.icon} className={cn("size-4", ci.tone)} />
-                  {detail.pipelineUrl ? (
-                    <button type="button" className="cursor-pointer font-medium hover:underline" onClick={() => navigate.openUrl(detail.pipelineUrl!)}>
-                      {ciLabel}
-                    </button>
-                  ) : (
-                    <span className="font-medium">{ciLabel}</span>
-                  )}
-                  <span className="flex-1" />
-                  {detail.headSha ? <code className="font-mono text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{detail.headSha.slice(0, 8)}</code> : null}
-                </div>
-              ) : null}
-              <div className="px-2 text-sm">
-                {detail.description.trim() === "" ? (
-                  <span className="text-[color:var(--bbs-text-tertiary)]">No description provided.</span>
-                ) : (
-                  <Markdown content={detail.description} />
-                )}
-              </div>
-              <div className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-[color:var(--bbs-text-tertiary)]">
-                Changes, commits, discussions and approvals for GitLab aren’t shown here yet.{" "}
-                <button type="button" className="cursor-pointer underline" onClick={() => navigate.openUrl(url)}>
-                  Open on GitLab
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <MergeRequestBody
+          url={url}
+          number={number}
+          detail={detail}
+          failure={failure}
+          loading={loading}
+          now={now}
+          onRefresh={() => void load(true)}
+          onOpenUrl={(target) => navigate.openUrl(target)}
+        />
       </div>
     </div>
+  );
+}
+
+export interface MergeRequestBodyProps {
+  url: string;
+  number: number | null;
+  detail: MergeRequestDetail | null;
+  failure: ChangeRequestFailure | null;
+  loading: boolean;
+  now: number;
+  onRefresh: () => void;
+  onOpenUrl: (target: string) => void;
+}
+
+export function MergeRequestBody({ url, number, detail, failure, loading, now, onRefresh, onOpenUrl }: MergeRequestBodyProps) {
+  const ci = detail ? CI_COPY[detail.ci] : null;
+  const ciLabel = detail === null ? "" : detail.ci === "unknown" && detail.ciReason ? `CI status unavailable (${detail.ciReason})` : CI_COPY[detail.ci].label;
+  const notice = refreshNotice(failure, detail, now);
+
+  return (
+    <>
+      <div className="mt-2">
+        <h1 className="px-2 text-[length:var(--bbs-text-display)] font-medium">{detail ? detail.title : `Merge request !${number ?? "?"}`}</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-[color:var(--bbs-text-tertiary)]">
+          {detail?.author ? <span>{detail.author}</span> : null}
+          <span>{detail ? `${detail.identity.projectPath}!${detail.identity.number}` : `!${number ?? "?"}`}</span>
+          {detail?.updatedAt ? <span>Updated {relativeTime(detail.updatedAt, now)}</span> : null}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        {failure !== null && detail === null ? (
+          <EmptyState icon="Info" title={FAILURE_TITLE[failure.reason as keyof typeof FAILURE_TITLE] ?? "Couldn’t load this merge request"} body={failure.message}>
+            {failure.reason !== "rateLimited" ? <EmptyAction label="Try again" onClick={onRefresh} /> : null}
+            <EmptyAction label="Open on GitLab" onClick={() => onOpenUrl(url)} />
+          </EmptyState>
+        ) : detail === null ? (
+          <div aria-busy className="space-y-3">
+            <div className="h-24 animate-pulse rounded-lg border border-border" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {notice !== null ? (
+              <div role="status" className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs">
+                <div className="flex items-center gap-2 font-medium text-[var(--attention)]">
+                  <Icon name="AlertTriangle" className="size-4 shrink-0" />
+                  {notice.title}
+                </div>
+                <p className="mt-1 text-[color:var(--bbs-text-tertiary)]">{notice.message}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[color:var(--bbs-text-tertiary)]">
+                  <span>{notice.freshness}</span>
+                  {failure !== null && failure.reason !== "rateLimited" ? (
+                    <button type="button" className="cursor-pointer underline" disabled={loading} onClick={onRefresh}>
+                      Refresh
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {ci ? (
+              <div className="flex items-center gap-2 px-2 text-[length:var(--bbs-text-row)]">
+                <Icon name={ci.icon} className={cn("size-4", ci.tone)} />
+                {detail.pipelineUrl ? (
+                  <button type="button" className="cursor-pointer font-medium hover:underline" onClick={() => onOpenUrl(detail.pipelineUrl!)}>
+                    {ciLabel}
+                  </button>
+                ) : (
+                  <span className="font-medium">{ciLabel}</span>
+                )}
+                <span className="flex-1" />
+                {detail.headSha ? <code className="font-mono text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{detail.headSha.slice(0, 8)}</code> : null}
+              </div>
+            ) : null}
+            <div className="px-2 text-sm">
+              {detail.description.trim() === "" ? (
+                <span className="text-[color:var(--bbs-text-tertiary)]">No description provided.</span>
+              ) : (
+                <Markdown content={detail.description} />
+              )}
+            </div>
+            <div className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-[color:var(--bbs-text-tertiary)]">
+              Changes, commits, discussions and approvals for GitLab aren’t shown here yet.{" "}
+              <button type="button" className="cursor-pointer underline" onClick={() => onOpenUrl(url)}>
+                Open on GitLab
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
