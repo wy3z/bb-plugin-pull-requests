@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/model";
+import { FAILURE_TITLE, refreshNotice } from "@/lib/change-request-notice";
 import type { MergeRequestDetail, MergeRequestDetailResult } from "@/lib/providers/gitlab";
 import type { rpcContract } from "../../server";
 import { EmptyAction, EmptyState, useNow } from "./common";
@@ -83,17 +84,6 @@ const CI_COPY: Record<ChangeRequestCiState, { label: string; icon: IconName; ton
   unknown: { label: "Pipeline status unknown", icon: "Info", tone: "text-[color:var(--bbs-text-tertiary)]" },
 };
 
-const FAILURE_TITLE: Partial<Record<Exclude<MergeRequestDetailResult, { ok: true }>["reason"], string>> = {
-  cliMissing: "glab isn’t installed",
-  authentication: "glab isn’t signed in",
-  forbidden: "This merge request isn’t visible",
-  notFound: "Merge request not found",
-  hostOffline: "The machine is offline",
-  rateLimited: "GitLab is rate limiting requests",
-  network: "Couldn’t reach GitLab",
-  unsupportedHost: "Unknown GitLab instance",
-};
-
 const STATE_CHIP: Record<MergeRequestDetail["state"], { label: string; icon: IconName; className: string }> = {
   open: { label: "Open", icon: "GitPullRequest", className: "bg-[color-mix(in_oklab,var(--success)_10%,transparent)] [&>svg]:text-[var(--success)]" },
   draft: { label: "Draft", icon: "FileText", className: "bg-muted-foreground/10 [&>svg]:text-[color:var(--bbs-text-tertiary)]" },
@@ -158,6 +148,8 @@ export function MergeRequestPage({
   const copyUrl = () =>
     void experimental_copyToClipboard({ text: url }).then((ok) => (ok ? toast("Copied MR URL") : toast.error("Couldn’t copy the link")));
   const ci = detail ? CI_COPY[detail.ci] : null;
+  const ciLabel = detail === null ? "" : detail.ci === "unknown" && detail.ciReason ? `CI status unavailable (${detail.ciReason})` : CI_COPY[detail.ci].label;
+  const notice = refreshNotice(failure, detail, now);
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
@@ -230,15 +222,32 @@ export function MergeRequestPage({
             </div>
           ) : (
             <div className="space-y-4">
+              {notice !== null ? (
+                <div role="status" className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs">
+                  <div className="flex items-center gap-2 font-medium text-[var(--attention)]">
+                    <Icon name="AlertTriangle" className="size-4 shrink-0" />
+                    {notice.title}
+                  </div>
+                  <p className="mt-1 text-[color:var(--bbs-text-tertiary)]">{notice.message}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[color:var(--bbs-text-tertiary)]">
+                    <span>{notice.freshness}</span>
+                    {failure !== null && failure.reason !== "rateLimited" ? (
+                      <button type="button" className="cursor-pointer underline" disabled={loading} onClick={() => void load(true)}>
+                        Refresh
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               {ci ? (
                 <div className="flex items-center gap-2 px-2 text-[length:var(--bbs-text-row)]">
                   <Icon name={ci.icon} className={cn("size-4", ci.tone)} />
                   {detail.pipelineUrl ? (
                     <button type="button" className="cursor-pointer font-medium hover:underline" onClick={() => navigate.openUrl(detail.pipelineUrl!)}>
-                      {ci.label}
+                      {ciLabel}
                     </button>
                   ) : (
-                    <span className="font-medium">{ci.label}</span>
+                    <span className="font-medium">{ciLabel}</span>
                   )}
                   <span className="flex-1" />
                   {detail.headSha ? <code className="font-mono text-[length:var(--bbs-text-meta)] text-[color:var(--bbs-text-tertiary)]">{detail.headSha.slice(0, 8)}</code> : null}

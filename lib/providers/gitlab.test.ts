@@ -6,8 +6,9 @@ import { classifyGlabStderr, discoverMergeRequest, parseGlabApiOutput, readMerge
 const SHA = "b".repeat(40);
 
 function mr(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const iid = typeof overrides.iid === "number" ? overrides.iid : 12;
   return {
-    iid: 12,
+    iid,
     project_id: 77,
     source_project_id: 77,
     target_project_id: 77,
@@ -16,7 +17,7 @@ function mr(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     state: "opened",
     draft: false,
     title: "Ship it",
-    web_url: "https://gitlab.com/group/sub/project/-/merge_requests/12",
+    web_url: `https://gitlab.com/group/sub/project/-/merge_requests/${iid}`,
     sha: SHA,
     updated_at: "2026-11-06T09:00:00Z",
     ...overrides,
@@ -132,16 +133,18 @@ describe("discovering a branch's merge request", () => {
   });
 
   it("never chooses from a truncated candidate list", async () => {
-    const { transport } = fakeGitLab({
+    const { transport, calls } = fakeGitLab({
       "projects/group%2Fsub%2Fproject/merge_requests?": (path) => {
         const page = Number(/[?&]page=(\d+)/.exec(path)![1]);
         if (page === 1) return ok([mr({ iid: 1 })], 2);
         if (page < 6) return ok([], page + 1);
-        return ok([mr({ iid: 2 })], null);
+        return ok([mr({ iid: 7 })], null);
       },
       "projects/77/merge_requests/": ok({ ...mr({ iid: 1 }), head_pipeline: null }),
     });
-    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "unavailable" });
+    const row = await discoverMergeRequest(transport, base);
+    expect(row).toMatchObject({ outcome: "unavailable", reason: "incomplete" });
+    expect(calls.filter((call) => call.includes("?"))).toHaveLength(5);
   });
 
   it("withholds a merged or closed MR that only shares the branch name", async () => {
@@ -149,8 +152,7 @@ describe("discovering a branch's merge request", () => {
       "projects/group%2Fsub%2Fproject/merge_requests?": (path) => (/state=opened/.test(path) ? ok([]) : ok([mr({ iid: 4, state: "merged" })])),
       "projects/77/merge_requests/4": ok({ ...mr({ iid: 4, state: "merged" }), head_pipeline: null }),
     });
-    const row = await discoverMergeRequest(transport, base);
-    expect(row.outcome).not.toBe("available");
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "unavailable", reason: "unverified" });
   });
 
   it("refuses an MR whose web_url is on another instance instead of inventing a URL", async () => {
@@ -198,12 +200,31 @@ describe("discovering a branch's merge request", () => {
     expect(row.outcome === "unavailable" && row.message).toContain("glab auth login --hostname git.example.com");
   });
 
+  it("keeps the MR but names the reason when the detail read is forbidden", async () => {
+    const { transport } = fakeGitLab({
+      "projects/group%2Fsub%2Fproject/merge_requests?": ok([mr()]),
+      "projects/77/merge_requests/12": { ok: false, failure: "forbidden", status: 403 },
+    });
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({
+      outcome: "available",
+      changeRequest: { identity: { number: 12 }, ci: { state: "unknown", reason: "forbidden" } },
+    });
+  });
+
+  it("names the reason when a listed MR's detail has disappeared", async () => {
+    const { transport } = fakeGitLab({
+      "projects/group%2Fsub%2Fproject/merge_requests?": ok([mr()]),
+      "projects/77/merge_requests/12": { ok: false, failure: "notFound", status: 404 },
+    });
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "available", changeRequest: { ci: { state: "unknown", reason: "unknown" } } });
+  });
+
   it("keeps the MR but marks CI unknown when the detail read fails for a non-auth reason", async () => {
     const { transport } = fakeGitLab({
       "projects/group%2Fsub%2Fproject/merge_requests?": ok([mr()]),
       "projects/77/merge_requests/12": { ok: false, failure: "network", status: 500 },
     });
-    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "available", changeRequest: { ci: { state: "unknown" } } });
+    expect(await discoverMergeRequest(transport, base)).toMatchObject({ outcome: "available", changeRequest: { ci: { state: "unknown", reason: "network" } } });
   });
 });
 

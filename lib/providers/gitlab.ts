@@ -1,4 +1,11 @@
-import type { ChangeRequest, ChangeRequestRow, ChangeRequestState, ChangeRequestCiState, GitLabIdentity } from "@wy3z/bb-suite/change-requests";
+import type {
+  ChangeRequest,
+  ChangeRequestRow,
+  ChangeRequestState,
+  ChangeRequestCiState,
+  ChangeRequestUnavailableReason,
+  GitLabIdentity,
+} from "@wy3z/bb-suite/change-requests";
 import {
   gitlabIdentity,
   gitlabProjectApiPath,
@@ -192,6 +199,7 @@ export async function discoverMergeRequest(transport: GitLabTransport, input: Di
   if (identity === null) return provenanceMismatch(input.instance, chosen.iid);
   const detail = await transport.get(`${gitlabProjectApiPath(chosen.projectId)}/merge_requests/${chosen.iid}`);
   let ci: ChangeRequestCiState = "unknown";
+  let ciReason: ChangeRequestUnavailableReason | null = null;
   let state: ChangeRequestState = chosen.state;
   let title = chosen.title;
   if (detail.ok && typeof detail.body === "object" && detail.body !== null) {
@@ -202,14 +210,15 @@ export async function discoverMergeRequest(transport: GitLabTransport, input: Di
       title = fresh.title || title;
       ci = "head_pipeline" in body ? pipelineCiState(body.head_pipeline, fresh.sha) : "unknown";
     }
-  } else if (!detail.ok && detail.failure === "authentication") {
-    return unavailableFor("authentication", context);
+  } else if (!detail.ok) {
+    if (detail.failure === "authentication") return unavailableFor("authentication", context);
+    ciReason = detail.failure === "notFound" ? "unknown" : unavailableFor(detail.failure, context).reason;
   }
   const changeRequest: ChangeRequest = {
     identity,
     title,
     state,
-    ci: { state: ci },
+    ci: ciReason === null ? { state: ci } : { state: ci, reason: ciReason },
     sourceBranch: chosen.sourceBranch,
     targetBranch: chosen.targetBranch,
     updatedAt: chosen.updatedAt,
@@ -231,6 +240,7 @@ export interface MergeRequestDetail {
   targetProjectId: number;
   headSha: string | null;
   ci: ChangeRequestCiState;
+  ciReason: ChangeRequestUnavailableReason | null;
   pipelineUrl: string | null;
   detailedMergeStatus: string | null;
   createdAt: string | null;
@@ -251,6 +261,15 @@ function safeHttpsUrl(raw: unknown, base: string): string | null {
   } catch {
     return null;
   }
+}
+
+function pipelineUnverifiedReason(ci: ChangeRequestCiState, pipeline: unknown, headSha: string | null): ChangeRequestUnavailableReason | null {
+  if (ci !== "unknown") return null;
+  if (typeof pipeline === "object" && pipeline !== null) {
+    const sha = (pipeline as { sha?: unknown }).sha;
+    if (typeof sha === "string" && headSha !== null && sha !== headSha) return "unverified";
+  }
+  return "unknown";
 }
 
 export async function readMergeRequest(
@@ -278,6 +297,7 @@ export async function readMergeRequest(
   const resolved = gitlabIdentity(instance, candidate);
   if (resolved === null) return { ok: false, reason: "unknown", message: provenanceMismatch(instance, candidate.iid).message };
   const pipeline = body.head_pipeline as Record<string, unknown> | null | undefined;
+  const ci = "head_pipeline" in body ? pipelineCiState(pipeline ?? null, candidate.sha) : "unknown";
   return {
     ok: true,
     value: {
@@ -291,7 +311,8 @@ export async function readMergeRequest(
       sourceProjectId: candidate.sourceProjectId,
       targetProjectId: candidate.targetProjectId,
       headSha: candidate.sha,
-      ci: "head_pipeline" in body ? pipelineCiState(pipeline ?? null, candidate.sha) : "unknown",
+      ci,
+      ciReason: pipelineUnverifiedReason(ci, pipeline, candidate.sha),
       pipelineUrl: pipeline ? safeHttpsUrl(pipeline.web_url, instance.base) : null,
       detailedMergeStatus: typeof body.detailed_merge_status === "string" ? body.detailed_merge_status : null,
       createdAt: typeof body.created_at === "string" ? body.created_at : null,
