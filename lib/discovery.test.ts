@@ -238,6 +238,54 @@ describe("discovery outcomes", () => {
     expect((await discovery.read(["gl"], true)).gl).toMatchObject({ outcome: "unavailable", provider: "gitlab", reason: "rateLimited" });
   });
 
+  it("stamps every row with the environment branch BB reported, so a branch switch changes the row", async () => {
+    let branch = "feature";
+    const environment = (id: string, path: string, status = "ready"): DiscoveryEnvironment => ({ id, hostId: "h1", path, status, isGitRepo: true, branchName: branch });
+    const { discovery } = harness({
+      environment: async (id) => (id === "creating" ? environment(id, "/w/creating", "creating") : environment(id, id === "gh" ? "/w/gh" : "/w/gl")),
+      inspect: async (_hostId, paths) =>
+        paths.map((path) => checkout(path, path === "/w/gh" ? "git@github.com:owner/repo.git" : "git@gitlab.com:group/sub/project.git", branch)),
+      gitlabBody: (path) => {
+        const mr = { iid: 3, project_id: 5, source_project_id: 5, target_project_id: 5, source_branch: "feature", target_branch: "main", state: "opened", title: "MR", web_url: "https://gitlab.com/group/sub/project/-/merge_requests/3", sha: SHA, updated_at: "2026-11-06T00:00:00Z" };
+        if (!path.includes("?")) return { ok: true, status: 200, nextPage: null, body: { ...mr, head_pipeline: null } };
+        return { ok: true, status: 200, nextPage: null, body: path.includes("source_branch=feature") ? [mr] : [] };
+      },
+    });
+    const before = await discovery.read(["gl", "gh", "creating"]);
+    expect(before.gl).toMatchObject({ outcome: "available", environmentBranch: "feature" });
+    expect(before.gh).toMatchObject({ outcome: "available", environmentBranch: "feature" });
+    expect(before.creating).toMatchObject({ outcome: "unavailable", reason: "notReady", environmentBranch: "feature" });
+    branch = "other";
+    for (const id of ["gl", "gh", "creating"]) discovery.forget(id);
+    const after = await discovery.read(["gl", "gh", "creating"]);
+    expect(after.gl).toEqual({ outcome: "absent", provider: "gitlab", environmentBranch: "other" });
+    expect(after.gh).toMatchObject({ outcome: "available", environmentBranch: "other" });
+    expect(after.creating).toMatchObject({ environmentBranch: "other" });
+    expect(JSON.stringify(after.gh)).not.toBe(JSON.stringify(before.gh));
+  });
+
+  it("leaves the branch unknown when BB couldn't read the environment", async () => {
+    const { discovery } = harness({
+      environment: async () => {
+        throw new Error("offline");
+      },
+    });
+    const row = (await discovery.read(["gl"])).gl!;
+    expect(row).toMatchObject({ outcome: "unavailable", reason: "unknown" });
+    expect("environmentBranch" in row).toBe(false);
+  });
+
+  it("shares one discovery between repeated keys and concurrent readers of an environment", async () => {
+    const { discovery, calls } = harness();
+    const [first, second, third] = await Promise.all([discovery.read(["gl", "gl", "gh", "gl"]), discovery.read(["gl"]), discovery.read(["gh", "gl"])]);
+    expect(calls.inspect).toBe(1);
+    expect(calls.github).toEqual([["gh"]]);
+    expect(calls.gitlab.filter((call) => call.path.includes("?")).length).toBe(1);
+    expect(second.gl).toEqual(first.gl);
+    expect(third.gl).toEqual(first.gl);
+    expect(third.gh).toEqual(first.gh);
+  });
+
   it("does not query a GitLab installed under a path prefix", async () => {
     const instances = parseGitLabInstances("corp=https://code.corp.example/gitlab").instances;
     const { discovery, calls } = harness({

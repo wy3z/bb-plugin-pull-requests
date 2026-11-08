@@ -14,6 +14,7 @@ export interface DiscoveryEnvironment {
   path: string | null;
   status: string;
   isGitRepo: boolean;
+  branchName?: string | null;
 }
 
 export interface DiscoveryHost {
@@ -150,8 +151,9 @@ export function createDiscovery(deps: DiscoveryDeps) {
     return deps.now() - entry.at < ttl ? entry.row : null;
   }
 
-  async function plan(environmentIds: string[]): Promise<Map<string, Plan>> {
+  async function plan(environmentIds: string[]): Promise<{ plans: Map<string, Plan>; branches: Map<string, string | null> }> {
     const plans = new Map<string, Plan>();
+    const branches = new Map<string, string | null>();
     const environments = await Promise.all(
       environmentIds.map(async (id) => {
         try {
@@ -164,6 +166,7 @@ export function createDiscovery(deps: DiscoveryDeps) {
     const byHost = new Map<string, { id: string; path: string }[]>();
     for (const [id, environment] of environments) {
       const known = lastProvider.get(id) ?? null;
+      if (environment?.branchName !== undefined) branches.set(id, environment.branchName);
       if (environment === undefined) {
         plans.set(id, { kind: "row", row: unavailable(known, "unknown", "BB couldn't read this environment.") });
       } else if (environment === null || !environment.isGitRepo) {
@@ -259,7 +262,7 @@ export function createDiscovery(deps: DiscoveryDeps) {
         });
       }),
     );
-    return plans;
+    return { plans, branches };
   }
 
   async function resolveGitLab(environmentId: string, step: Extract<Plan, { kind: "gitlab" }>): Promise<Resolved> {
@@ -290,8 +293,10 @@ export function createDiscovery(deps: DiscoveryDeps) {
 
   async function load(environmentIds: string[]): Promise<Map<string, Resolved>> {
     const rows = new Map<string, Resolved>();
-    const plain = (id: string, row: ChangeRequestRow) => void rows.set(id, { row, provenance: null });
-    const plans = await plan(environmentIds);
+    const { plans, branches } = await plan(environmentIds);
+    const stamp = (id: string, row: ChangeRequestRow): ChangeRequestRow =>
+      branches.has(id) ? { ...row, environmentBranch: branches.get(id) ?? null } : row;
+    const plain = (id: string, row: ChangeRequestRow) => void rows.set(id, { row: stamp(id, row), provenance: null });
     const github: string[] = [];
     const gitlab: Promise<void>[] = [];
     for (const id of environmentIds) {
@@ -302,7 +307,7 @@ export function createDiscovery(deps: DiscoveryDeps) {
       else
         gitlab.push(
           resolveGitLab(id, step).then(
-            (resolved) => void rows.set(id, resolved),
+            (resolved) => void rows.set(id, { ...resolved, row: stamp(id, resolved.row) }),
             () => plain(id, unavailable("gitlab", "unknown", "The merge request lookup failed unexpectedly.")),
           ),
         );
