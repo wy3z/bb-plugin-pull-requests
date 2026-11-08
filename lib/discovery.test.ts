@@ -264,6 +264,35 @@ describe("discovery outcomes", () => {
     expect(JSON.stringify(after.gh)).not.toBe(JSON.stringify(before.gh));
   });
 
+  it("keeps the old branch's stamp on a lookup that finishes after a branch switch, and never caches it", async () => {
+    let branch = "old";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let started!: () => void;
+    const begun = new Promise<void>((resolve) => (started = resolve));
+    const mr = (iid: number, name: string) => ({ iid, project_id: 5, source_project_id: 5, target_project_id: 5, source_branch: name, target_branch: "main", state: "opened", title: name, web_url: `https://gitlab.com/group/sub/project/-/merge_requests/${iid}`, sha: SHA, updated_at: "2026-11-06T00:00:00Z" });
+    const { discovery } = harness({
+      environment: async (id) => ({ id, hostId: "h1", path: "/w/gl", status: "ready", isGitRepo: true, branchName: branch }),
+      inspect: async (_hostId, paths) => paths.map((path) => checkout(path, "git@gitlab.com:group/sub/project.git", branch)),
+      gitlab: async (_hostId, _hostname, path) => {
+        const name = path.includes("source_branch=old") ? "old" : "new";
+        const iid = name === "old" ? 1 : 2;
+        if (name === "old" && path.includes("?")) {
+          started();
+          await gate;
+        }
+        return { ok: true, status: 200, nextPage: null, body: path.includes("?") ? [mr(iid, name)] : { ...mr(iid, name), head_pipeline: null } };
+      },
+    });
+    const inFlight = discovery.read(["gl"]);
+    await begun;
+    branch = "new";
+    discovery.forget("gl");
+    release();
+    expect((await inFlight).gl).toMatchObject({ environmentBranch: "old", changeRequest: { identity: { number: 1 } } });
+    expect((await discovery.read(["gl"])).gl).toMatchObject({ environmentBranch: "new", changeRequest: { identity: { number: 2 } } });
+  });
+
   it("leaves the branch unknown when BB couldn't read the environment", async () => {
     const { discovery } = harness({
       environment: async () => {
